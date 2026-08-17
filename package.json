@@ -1,0 +1,91 @@
+{
+  "name": "@hraness/web-discovery",
+  "version": "0.1.0",
+  "description": "Validated Next.js metadata, crawler, sitemap, JSON-LD, and social-image primitives.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hraness/web-discovery.git"
+  },
+  "homepage": "https://github.com/hraness/web-discovery#readme",
+  "bugs": {
+    "url": "https://github.com/hraness/web-discovery/issues"
+  },
+  "keywords": [
+    "json-ld",
+    "metadata",
+    "nextjs",
+    "seo",
+    "sitemap"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./json-ld": {
+      "types": "./src/json-ld.tsx",
+      "import": "./dist/json-ld.js",
+      "default": "./dist/json-ld.js"
+    },
+    "./social-image": {
+      "types": "./src/social-image.tsx",
+      "import": "./dist/social-image.js",
+      "default": "./dist/social-image.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "files": [
+    "dist",
+    "src/discovery.ts",
+    "src/index.ts",
+    "src/json-ld.tsx",
+    "src/social-image.tsx",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "kb:refresh": "bunx --bun github:hraness/kb#v0.15.1 refresh --root kb",
+    "kb:check:lane": "bunx --bun github:hraness/kb#v0.15.1 check --root kb --no-catalog",
+    "kb:check": "bunx --bun github:hraness/kb#v0.15.1 check --root kb && bunx --bun github:hraness/kb#v0.15.1 agents check --root kb --repo .",
+    "kb:catalog": "bunx --bun github:hraness/kb#v0.15.1 catalog --root kb",
+    "build": "bun run ./scripts/build.ts",
+    "check:portfolio-inventory": "bun run ./scripts/check-portfolio-inventory.ts",
+    "check:public-boundary": "bun run ./scripts/check-public-boundary.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./src",
+    "test:package": "bun run ./scripts/package-smoke.ts",
+    "check": "bun run check:portfolio-inventory && bun run check:public-boundary && bun run lint && bun run typecheck && bun run build && bun run test && bun run test:package",
+    "prepack": "bun run check"
+  },
+  "peerDependencies": {
+    "next": ">=16.2.0 <17.0.0",
+    "react": ">=19.0.0 <20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.2",
+    "fast-check": "^4.8.0",
+    "next": "16.2.12",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.53.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
