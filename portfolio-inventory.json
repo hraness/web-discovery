@@ -8,10 +8,17 @@
       "name": "@hraness/web-discovery",
       "path": ".",
       "visibility": "public",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ],
-  "dependencies": [],
+  "dependencies": [
+    {
+      "from": "@hraness/web-discovery",
+      "scope": "runtime",
+      "specifier": "github:hraness/design-kit#v0.2.1",
+      "to": "@hraness/design-kit"
+    }
+  ],
   "deployments": [],
   "brands": [],
   "publications": [

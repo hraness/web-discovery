@@ -1,3 +1,4 @@
+import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/social";
 import { ImageResponse } from "next/og.js";
 
 import { LARGE_SOCIAL_IMAGE } from "./discovery.js";
@@ -65,7 +66,7 @@ export function createSocialImageResponse(
           color: theme.foreground,
           display: "flex",
           flexDirection: "column",
-          fontFamily: "Arial, Helvetica, sans-serif",
+          fontFamily: "Nebula Sans",
           height: "100%",
           justifyContent: "space-between",
           padding: "58px 66px",
@@ -127,6 +128,9 @@ export function createSocialImageResponse(
         </div>
       </div>
     ),
-    LARGE_SOCIAL_IMAGE,
+    {
+      ...LARGE_SOCIAL_IMAGE,
+      fonts: [...nebulaSansSocialFonts()],
+    },
   );
 }

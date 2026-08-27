@@ -123,8 +123,10 @@ if (JSON.stringify(manifest.peerDependencies) !== JSON.stringify({
 })) {
   throw new Error("package must declare only the supported Next.js and React peers");
 }
-if (manifest.dependencies !== undefined) {
-  throw new Error("package must not declare runtime dependencies");
+if (JSON.stringify(manifest.dependencies) !== JSON.stringify({
+  "@hraness/design-kit": "github:hraness/design-kit#v0.2.1",
+})) {
+  throw new Error("package must pin only the reviewed Design Kit release");
 }
 
 for (const [source, requiredImport] of [
@@ -144,4 +146,15 @@ const socialImageSource = await readFile(
 );
 if (!socialImageSource.includes('from "next/og.js"')) {
   throw new Error("social-image runtime must use the Node-compatible Next.js export");
+}
+if (!socialImageSource.includes(
+  'from "@hraness/design-kit/fonts/nebula-sans/social"',
+)) {
+  throw new Error("social-image runtime must use the reviewed Nebula Sans payload export");
+}
+if (!socialImageSource.includes('fontFamily: "Nebula Sans"')) {
+  throw new Error("social-image proportional copy must use Nebula Sans");
+}
+if (/Arial|Helvetica/gu.test(socialImageSource)) {
+  throw new Error("social-image runtime must not retain legacy sans fallbacks");
 }
