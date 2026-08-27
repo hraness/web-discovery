@@ -22,8 +22,8 @@
 - Keep canonical URLs, social metadata, sitemaps, crawler policy, and structured data derived from one validated bare HTTPS origin.
 - Model indexable and private surfaces explicitly. Never use `robots.txt` as a substitute for page-level `noindex`, authentication, or authorization.
 - Emit only schema that represents visible page content. Do not invent ratings, reviews, prices, authorship, dates, or other unsupported facts.
-- Keep social cards deterministic, readable, and free of remote assets or runtime filesystem dependencies.
-- Preserve the root, `./json-ld`, and `./social-image` export contracts. Keep React and Next.js as peers and do not add product or design-system dependencies.
+- Keep social cards deterministic, readable, and free of remote assets or runtime filesystem dependencies. Load the official Nebula Sans Book and Bold payloads only through the reviewed generated Design Kit export.
+- Preserve the root, `./json-ld`, and `./social-image` export contracts. Keep React and Next.js as peers. The only runtime dependency is the exact immutable Design Kit release that supplies the social-image font payloads; do not add product dependencies.
 - Use Bun 1.3.14 for installs, builds, and tests. Verify every packed runtime export with genuine Node 24 and a real Next.js production build.
 - Keep mandatory rules in the closest `AGENTS.md`, executable contracts in types and tests, and pull-based rationale, evidence, synthesis, and plans in `kb/`.
 - Run `bun run check` before handoff. Run `bun run kb:refresh`, review the bounded findings, and finish with `bun run kb:check` after material KB edits.

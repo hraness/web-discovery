@@ -1,7 +1,7 @@
 # Contents
 
 - `build.ts` produces the three committed ESM runtime exports.
-- `package-smoke.ts` verifies the packed artifact with genuine Node, two TypeScript resolution modes, and a real Next.js build.
+- `package-smoke.ts` verifies the packed artifact with genuine Node, a rendered social-image response, two TypeScript resolution modes, and a real Next.js build.
 - `check-public-boundary.ts` rejects private provenance, mutating CI, export drift, and unexpected runtime coupling.
 - `check-portfolio-inventory.ts` derives the canonical repository inventory from `package.json`.
 

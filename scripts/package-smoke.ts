@@ -114,6 +114,17 @@ try {
     "-e",
     `await Promise.all(${JSON.stringify(importSpecifiers)}.map((specifier) => import(specifier)))`,
   ], consumer);
+  await run([
+    nodeExecutable,
+    "--input-type=module",
+    "-e",
+    [
+      `const { createSocialImageResponse } = await import(${JSON.stringify(`${packageName}/social-image`)});`,
+      'const response = createSocialImageResponse({ description: "Installed package", domain: "example.com", title: "Nebula Sans" });',
+      "const bytes = new Uint8Array(await response.arrayBuffer());",
+      "if (bytes.length < 1_000 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error(\"installed social-image export did not render a PNG\");",
+    ].join(" "),
+  ], consumer);
 
   const installedRoot = join(
     consumer,

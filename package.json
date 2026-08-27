@@ -1,6 +1,6 @@
 {
   "name": "@hraness/web-discovery",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Validated Next.js metadata, crawler, sitemap, JSON-LD, and social-image primitives.",
   "license": "MIT",
   "type": "module",
@@ -70,6 +70,9 @@
   "peerDependencies": {
     "next": ">=16.2.0 <17.0.0",
     "react": ">=19.0.0 <20.0.0"
+  },
+  "dependencies": {
+    "@hraness/design-kit": "github:hraness/design-kit#v0.2.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

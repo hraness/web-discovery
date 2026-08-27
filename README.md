@@ -11,7 +11,7 @@ Pin the immutable GitHub release:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.1.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.2.0"
   }
 }
 ```
@@ -86,7 +86,7 @@ export default function OpenGraphImage() {
 }
 ```
 
-The response is deterministic and uses no remote assets or runtime filesystem dependencies. Applications can pass explicit theme colors while retaining ownership of their visual identity.
+The response embeds the official Nebula Sans Book and Bold OTF payloads from the immutable `@hraness/design-kit` release. It stays deterministic and uses no remote assets or runtime filesystem lookups. Applications can pass explicit theme colors while retaining ownership of their visual identity. Consumer-owned cards that deliberately use serif or monospace typography remain separate, explicit compositions.
 
 ## Development
 
@@ -97,7 +97,7 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The complete check validates the repository inventory and public boundary, lints and typechecks the source, rebuilds the committed distribution, runs examples and property tests, packs the release artifact, imports every runtime export with genuine Node, typechecks an installed consumer under Bundler and NodeNext resolution, and compiles the package in a real Next.js production build.
+The complete check validates the repository inventory and public boundary, lints and typechecks the source, rebuilds the committed distribution, runs examples and property tests, packs the release artifact, imports every runtime export and renders a PNG with genuine Node, typechecks an installed consumer under Bundler and NodeNext resolution, and compiles the package in a real Next.js production build.
 
 ## License
 
