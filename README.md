@@ -11,7 +11,7 @@ Pin the immutable GitHub release:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.2.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.3.0"
   }
 }
 ```
@@ -52,6 +52,56 @@ export const sitemap = () => createSitemap(site.origin, [
 Origins must be bare HTTPS origins. Owned paths must be root-relative and cannot contain a query, fragment, foreign origin, or spelling that URL parsing would normalize.
 
 Use `createPrivateSiteMetadata` and `createPrivateRobots` for private surfaces. The private metadata builder applies page-level `noindex` and omits canonical and social metadata. Crawler policy is not authentication or authorization.
+
+## Representative article images
+
+Keep the article's visible image, social crop, metadata, schema, feed, and
+sitemap entry bound to one consumer-owned record:
+
+```ts
+import {
+  articleJsonLd,
+  createArticleMetadata,
+  createArticleSitemapPath,
+  createAtomImageEnclosure,
+  type ArticleDiscovery,
+} from "@hraness/web-discovery";
+
+const article = {
+  canonicalPath: "/guides/one-image-everywhere",
+  description: "How one checked image record drives every discovery surface.",
+  image: {
+    alt: "Blue and orange modules connected across a work surface.",
+    caption: "One representative image record, projected consistently.",
+    contentType: "image/webp",
+    credit: "Editorial illustration by Example.",
+    height: 864,
+    path: "/images/guides/one-image-everywhere.webp",
+    social: {
+      height: 630,
+      path: "/images/guides/one-image-everywhere-social.webp",
+      width: 1200,
+    },
+    width: 1536,
+  },
+  publishedTime: "2026-08-29T00:00:00.000Z",
+  title: "One representative image, everywhere",
+  type: "BlogPosting",
+} as const satisfies ArticleDiscovery;
+
+export const metadata = createArticleMetadata(site, article);
+export const articleSchema = articleJsonLd(site, article);
+export const sitemapEntry = createArticleSitemapPath(article);
+export const atomImage = createAtomImageEnclosure(site.origin, article.image);
+```
+
+Render the image and its caption in the page's initial HTML. Keep any asset
+hash, generation receipt, prompt digest, or source provenance in the same
+application registry; those review fields are intentionally not part of this
+product-neutral package. `createArticleMetadata` uses the social crop when one
+exists, while schema, Atom, and the image sitemap use the visible article
+image. RSS callers can use `createRssImageEnclosure` with the checked byte
+length.
 
 ## JSON-LD
 

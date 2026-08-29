@@ -2,19 +2,26 @@ import { describe, expect, test } from "bun:test";
 
 import {
   absoluteWebUrl,
+  articleJsonLd,
+  createArticleMetadata,
+  createArticleSitemapPath,
+  createAtomImageEnclosure,
   createPrivateRobots,
   createPrivateSiteMetadata,
   createIndexNowPayload,
   createPublicRobots,
   createPublicSiteMetadata,
+  createRssImageEnclosure,
   createSitemap,
   createWebManifest,
   NOINDEX_ROBOTS,
   parseOwnedPath,
   profilePageJsonLd,
+  representativeImageUrls,
   serializeJsonLd,
   webApplicationJsonLd,
   websiteJsonLd,
+  type ArticleDiscovery,
   type SearchSite,
 } from "./discovery";
 
@@ -26,6 +33,36 @@ const site = {
   title: "Example",
   titleTemplate: "%s — Example",
 } as const satisfies SearchSite;
+
+const article = {
+  authors: [{ kind: "Organization", name: "Example", path: "/guides" }],
+  canonicalPath: "/guides/one",
+  citations: ["https://primary.example/report"],
+  description: "A checked guide with one visible representative image.",
+  image: {
+    alt: "Blue and orange modules connected across an editorial work surface.",
+    caption: "One image record supplies every discovery surface.",
+    contentType: "image/webp",
+    credit: "Editorial illustration by Example.",
+    height: 864,
+    path: "/images/guides/one.webp",
+    social: {
+      height: 630,
+      path: "/images/guides/one-social.webp",
+      width: 1200,
+    },
+    width: 1536,
+  },
+  isAccessibleForFree: true,
+  isPartOfPath: "/",
+  keywords: ["representative images", "web discovery"],
+  modifiedTime: "2026-08-29T12:30:00.000Z",
+  publishedTime: "2026-08-28T00:00:00.000Z",
+  publisher: { kind: "Organization", name: "Example", path: "/" },
+  section: "Guides",
+  title: "One representative image, everywhere",
+  type: "BlogPosting",
+} as const satisfies ArticleDiscovery;
 
 describe("web discovery foundations", () => {
   test("builds coherent public metadata from one origin", () => {
@@ -91,6 +128,104 @@ describe("web discovery foundations", () => {
     ]);
     expect(() => createSitemap(site.origin, [{ path: "/" }, { path: "/" }]))
       .toThrow("Sitemap paths must be unique");
+  });
+
+  test("keeps one representative article image aligned across discovery surfaces", () => {
+    expect(representativeImageUrls(site.origin, article.image)).toEqual({
+      article: {
+        alt: article.image.alt,
+        height: 864,
+        type: "image/webp",
+        url: "https://example.com/images/guides/one.webp",
+        width: 1536,
+      },
+      social: {
+        alt: article.image.alt,
+        height: 630,
+        type: "image/webp",
+        url: "https://example.com/images/guides/one-social.webp",
+        width: 1200,
+      },
+    });
+
+    const metadata = createArticleMetadata(site, article);
+    expect(metadata).toMatchObject({
+      alternates: { canonical: "https://example.com/guides/one" },
+      openGraph: {
+        type: "article",
+        publishedTime: article.publishedTime,
+        modifiedTime: article.modifiedTime,
+        images: [{
+          alt: article.image.alt,
+          height: 630,
+          type: "image/webp",
+          url: "https://example.com/images/guides/one-social.webp",
+          width: 1200,
+        }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        images: [{
+          alt: article.image.alt,
+          height: 630,
+          type: "image/webp",
+          url: "https://example.com/images/guides/one-social.webp",
+          width: 1200,
+        }],
+      },
+    });
+
+    expect(articleJsonLd(site, article)).toMatchObject({
+      "@type": "BlogPosting",
+      "@id": "https://example.com/guides/one#article",
+      datePublished: article.publishedTime,
+      dateModified: article.modifiedTime,
+      image: {
+        "@type": "ImageObject",
+        caption: article.image.caption,
+        contentUrl: "https://example.com/images/guides/one.webp",
+        creditText: article.image.credit,
+        description: article.image.alt,
+        height: 864,
+        representativeOfPage: true,
+        width: 1536,
+      },
+      author: [{
+        "@type": "Organization",
+        name: "Example",
+        url: "https://example.com/guides",
+      }],
+      citation: ["https://primary.example/report"],
+    });
+
+    expect(createArticleSitemapPath(article)).toEqual({
+      images: ["/images/guides/one.webp"],
+      lastModified: article.modifiedTime,
+      path: "/guides/one",
+    });
+    expect(createAtomImageEnclosure(site.origin, article.image)).toEqual({
+      href: "https://example.com/images/guides/one.webp",
+      rel: "enclosure",
+      type: "image/webp",
+    });
+    expect(createRssImageEnclosure(site.origin, article.image, 1024)).toEqual({
+      length: 1024,
+      type: "image/webp",
+      url: "https://example.com/images/guides/one.webp",
+    });
+  });
+
+  test("rejects malformed article image records before emitting discovery data", () => {
+    expect(() => createArticleMetadata(site, {
+      ...article,
+      image: { ...article.image, width: 0 },
+    })).toThrow("positive safe integer");
+    expect(() => createArticleMetadata(site, {
+      ...article,
+      publishedTime: "2026-08-28",
+    })).toThrow("canonical ISO 8601 UTC timestamp");
+    expect(() => createRssImageEnclosure(site.origin, article.image, -1))
+      .toThrow("nonnegative safe integer");
   });
 
   test("rejects noncanonical origins and foreign paths", () => {

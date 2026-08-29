@@ -142,14 +142,20 @@ try {
   await writeFile(
     join(consumer, "index.tsx"),
     [
-      'import { createPublicSiteMetadata, type SearchSite } from "@hraness/web-discovery";',
+      'import { articleJsonLd, createArticleMetadata, createArticleSitemapPath, createAtomImageEnclosure, createPublicSiteMetadata, createRssImageEnclosure, parseOwnedPath, type ArticleDiscovery, type SearchSite } from "@hraness/web-discovery";',
       'import { JsonLdScript } from "@hraness/web-discovery/json-ld";',
       'import { createSocialImageResponse } from "@hraness/web-discovery/social-image";',
       'const site = { description: "Example", name: "Example", origin: "https://example.com", title: "Example" } as const satisfies SearchSite;',
       "const metadata = createPublicSiteMetadata(site);",
+      'const article = { canonicalPath: parseOwnedPath("/writing/example"), description: "Example article", image: { alt: "A representative example", contentType: "image/webp", height: 864, path: parseOwnedPath("/images/example.webp"), social: { height: 630, path: parseOwnedPath("/images/example-social.webp"), width: 1200 }, width: 1536 }, title: "Example article", type: "BlogPosting" } as const satisfies ArticleDiscovery;',
+      "const articleMetadata = createArticleMetadata(site, article);",
+      "const articleSchema = articleJsonLd(site, article);",
+      "const sitemapPath = createArticleSitemapPath(article);",
+      "const atomEnclosure = createAtomImageEnclosure(site.origin, article.image);",
+      "const rssEnclosure = createRssImageEnclosure(site.origin, article.image, 12_345);",
       'const schema = <JsonLdScript data={{ "@type": "WebSite" }} id="schema" />;',
       'const image = createSocialImageResponse({ description: "Example", domain: "example.com", title: "Example" });',
-      "void [metadata, schema, image];",
+      "void [metadata, articleMetadata, articleSchema, sitemapPath, atomEnclosure, rssEnclosure, schema, image];",
       "",
     ].join("\n"),
   );

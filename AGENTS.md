@@ -1,7 +1,7 @@
 <!-- kb:context scopes/repository--cdb4ee2aea69 -->
 # Contents
 
-- `src/discovery.ts` owns validated origins, paths, metadata, crawler policy, sitemaps, manifests, IndexNow payloads, and structured data.
+- `src/discovery.ts` owns validated origins, paths, site and article metadata, representative images, crawler policy, sitemaps, feed enclosures, manifests, IndexNow payloads, and structured data.
 - `src/json-ld.tsx` and `src/social-image.tsx` own the React and Next.js rendering boundaries.
 - `src/*.test.ts` holds deterministic examples and property tests for public behavior.
 - `scripts/` contains build, package-smoke, inventory, and public-boundary checks.
@@ -20,6 +20,7 @@
 - Extract another shared package only after two concrete consumers require the same stable, product-neutral interface. Keep product titles, descriptions, routes, update dates, crawler decisions, and visual identity in consumers.
 - Freeze package interfaces before parallel lanes begin. Give exports, manifests, lockfiles, generated output, and other convergence surfaces one owner while lanes edit disjoint paths.
 - Keep canonical URLs, social metadata, sitemaps, crawler policy, and structured data derived from one validated bare HTTPS origin.
+- Keep representative article images consumer-owned and derive metadata, schema, feed enclosures, and image sitemap entries from one checked record. Do not move asset provenance or image rendering into this package.
 - Model indexable and private surfaces explicitly. Never use `robots.txt` as a substitute for page-level `noindex`, authentication, or authorization.
 - Emit only schema that represents visible page content. Do not invent ratings, reviews, prices, authorship, dates, or other unsupported facts.
 - Keep social cards deterministic, readable, and free of remote assets or runtime filesystem dependencies. Load the official Nebula Sans Book and Bold payloads only through the reviewed generated Design Kit export.

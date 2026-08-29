@@ -3,9 +3,12 @@ import fc from "fast-check";
 
 import {
   absoluteWebUrl,
+  createAtomImageEnclosure,
   createSitemap,
   parseOwnedPath,
+  representativeImageUrls,
   serializeJsonLd,
+  type RepresentativeImage,
 } from "./discovery";
 
 const origin = "https://example.com" as const;
@@ -36,6 +39,51 @@ describe("web discovery laws", () => {
         );
         expect(sitemap.map(({ url }) => url)).toEqual(
           paths.map((path) => `${origin}${path}`),
+        );
+      },
+    ));
+  });
+
+  test("keeps every valid representative image dimension and owned path aligned", () => {
+    fc.assert(fc.property(
+      ownedPath,
+      fc.integer({ min: 1, max: 16_384 }),
+      fc.integer({ min: 1, max: 16_384 }),
+      (path, width, height) => {
+        const image = {
+          alt: "Checked representative image",
+          contentType: "image/webp",
+          height,
+          path: parseOwnedPath(path),
+          width,
+        } as const satisfies RepresentativeImage;
+        expect(representativeImageUrls(origin, image).article).toEqual({
+          alt: image.alt,
+          height,
+          type: image.contentType,
+          url: `${origin}${path}`,
+          width,
+        });
+        expect(createAtomImageEnclosure(origin, image).href).toBe(
+          `${origin}${path}`,
+        );
+      },
+    ));
+  });
+
+  test("rejects every nonpositive representative image dimension", () => {
+    fc.assert(fc.property(
+      fc.integer({ max: 0 }),
+      (width) => {
+        const image = {
+          alt: "Invalid representative image",
+          contentType: "image/webp",
+          height: 864,
+          path: "/image.webp",
+          width,
+        } as const satisfies RepresentativeImage;
+        expect(() => representativeImageUrls(origin, image)).toThrow(
+          "positive safe integer",
         );
       },
     ));
