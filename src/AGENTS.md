@@ -1,6 +1,6 @@
 # Contents
 
-- `discovery.ts` defines validated site metadata, crawler policy, sitemap, manifest, submission, and structured-data builders.
+- `discovery.ts` defines validated site and article metadata, representative-image projection, crawler policy, sitemap, feed-enclosure, manifest, submission, and structured-data builders.
 - `json-ld.tsx` renders safely serialized JSON-LD at the React boundary.
 - `social-image.tsx` builds deterministic 1200×630 Next.js social-image responses.
 - `index.ts` defines the root public export.
@@ -10,6 +10,7 @@
 
 - Accept bare HTTPS origins and root-relative owned paths. Reject credentials, queries, fragments, foreign origins, normalization, duplicate sitemap entries, and malformed colors.
 - Keep public metadata complete across canonical, Open Graph, Twitter, and page-level indexability fields.
+- Project one checked representative-image record into article metadata, schema, feed enclosures, and sitemap images. Keep captions truthful and product asset provenance in the consumer.
 - Keep private metadata free of canonicals and social previews while applying page-level `noindex`.
 - Escape JSON-LD for an HTML script context before rendering it.
 - Keep social-image layout inline and deterministic. Render shared proportional copy with the generated Nebula Sans Book and Bold payloads. Product color and copy remain explicit consumer inputs, while consumer-owned serif or monospace cards remain explicit compositions.

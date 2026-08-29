@@ -66,6 +66,59 @@ export type IndexNowPayload = Readonly<{
   urlList: readonly string[];
 }>;
 
+export type ImageContentType = "image/jpeg" | "image/png" | "image/webp";
+
+export type RepresentativeImage = Readonly<{
+  alt: string;
+  caption?: string;
+  contentType: ImageContentType;
+  credit?: string;
+  height: number;
+  path: OwnedPath;
+  social?: Readonly<{
+    height: number;
+    path: OwnedPath;
+    width: number;
+  }>;
+  width: number;
+}>;
+
+export type ArticleParty = Readonly<{
+  kind: "Organization" | "Person";
+  name: string;
+  path?: OwnedPath;
+}>;
+
+export type ArticleDiscovery = Readonly<{
+  authors?: readonly ArticleParty[];
+  canonicalPath: OwnedPath;
+  category?: string;
+  citations?: readonly `https://${string}`[];
+  description: string;
+  image: RepresentativeImage;
+  isAccessibleForFree?: boolean;
+  isPartOfPath?: OwnedPath;
+  keywords?: readonly string[];
+  modifiedTime?: string;
+  publishedTime?: string;
+  publisher?: ArticleParty;
+  section?: string;
+  title: string;
+  type: "Article" | "BlogPosting" | "NewsArticle";
+}>;
+
+export type AtomImageEnclosure = Readonly<{
+  href: string;
+  rel: "enclosure";
+  type: ImageContentType;
+}>;
+
+export type RssImageEnclosure = Readonly<{
+  length: number;
+  type: ImageContentType;
+  url: string;
+}>;
+
 function parsedOrigin(origin: SearchSite["origin"]): URL {
   const parsed = new URL(origin);
   if (
@@ -110,6 +163,263 @@ export function absoluteWebUrl(
   const base = parsedOrigin(origin);
   assertOwnedPath(path);
   return new URL(path, base).toString();
+}
+
+function assertNonempty(value: string, label: string): void {
+  if (value.trim().length === 0) {
+    throw new RangeError(`${label} cannot be empty.`);
+  }
+}
+
+function assertImageDimension(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${label} must be a positive safe integer.`);
+  }
+}
+
+function assertRepresentativeImage(image: RepresentativeImage): void {
+  assertOwnedPath(image.path);
+  assertNonempty(image.alt, "Representative image alt text");
+  assertImageDimension(image.width, "Representative image width");
+  assertImageDimension(image.height, "Representative image height");
+  if (image.caption !== undefined) {
+    assertNonempty(image.caption, "Representative image caption");
+  }
+  if (image.credit !== undefined) {
+    assertNonempty(image.credit, "Representative image credit");
+  }
+  if (image.social !== undefined) {
+    assertOwnedPath(image.social.path);
+    assertImageDimension(image.social.width, "Social image width");
+    assertImageDimension(image.social.height, "Social image height");
+  }
+}
+
+function assertArticleParty(party: ArticleParty): void {
+  assertNonempty(party.name, "Article party name");
+  if (party.path !== undefined) assertOwnedPath(party.path);
+}
+
+function assertIsoDateTime(value: string, label: string): void {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString() !== value) {
+    throw new RangeError(`${label} must be a canonical ISO 8601 UTC timestamp.`);
+  }
+}
+
+function articleUrl(site: SearchSite, article: ArticleDiscovery): string {
+  assertOwnedPath(article.canonicalPath);
+  assertNonempty(article.title, "Article title");
+  assertNonempty(article.description, "Article description");
+  assertRepresentativeImage(article.image);
+  article.authors?.forEach(assertArticleParty);
+  if (article.publisher !== undefined) assertArticleParty(article.publisher);
+  if (article.publishedTime !== undefined) {
+    assertIsoDateTime(article.publishedTime, "Article publishedTime");
+  }
+  if (article.modifiedTime !== undefined) {
+    assertIsoDateTime(article.modifiedTime, "Article modifiedTime");
+  }
+  return absoluteWebUrl(site.origin, article.canonicalPath);
+}
+
+function partyJsonLd(site: SearchSite, party: ArticleParty) {
+  assertArticleParty(party);
+  return {
+    "@type": party.kind,
+    name: party.name,
+    ...(party.path === undefined
+      ? {}
+      : { url: absoluteWebUrl(site.origin, party.path) }),
+  } as const;
+}
+
+export function representativeImageUrls(
+  origin: SearchSite["origin"],
+  image: RepresentativeImage,
+) {
+  assertRepresentativeImage(image);
+  const social = image.social ?? image;
+  return {
+    article: {
+      alt: image.alt,
+      height: image.height,
+      type: image.contentType,
+      url: absoluteWebUrl(origin, image.path),
+      width: image.width,
+    },
+    social: {
+      alt: image.alt,
+      height: social.height,
+      type: image.contentType,
+      url: absoluteWebUrl(origin, social.path),
+      width: social.width,
+    },
+  } as const;
+}
+
+export function createArticleMetadata(
+  site: SearchSite,
+  article: ArticleDiscovery,
+): Metadata {
+  const canonical = articleUrl(site, article);
+  const images = representativeImageUrls(site.origin, article.image);
+  const authorUrls = article.authors?.flatMap((author) => (
+    author.path === undefined ? [] : [absoluteWebUrl(site.origin, author.path)]
+  ));
+  return {
+    title: article.title,
+    description: article.description,
+    alternates: { canonical },
+    ...(article.authors === undefined
+      ? {}
+      : {
+        authors: article.authors.map((author) => ({
+          name: author.name,
+          ...(author.path === undefined
+            ? {}
+            : { url: absoluteWebUrl(site.origin, author.path) }),
+        })),
+      }),
+    ...(article.publisher === undefined
+      ? {}
+      : { publisher: article.publisher.name }),
+    ...(article.category === undefined ? {} : { category: article.category }),
+    openGraph: {
+      type: "article",
+      url: canonical,
+      siteName: site.name,
+      title: article.title,
+      description: article.description,
+      locale: site.locale ?? "en_US",
+      ...(article.publishedTime === undefined
+        ? {}
+        : { publishedTime: article.publishedTime }),
+      ...(article.modifiedTime === undefined
+        ? {}
+        : { modifiedTime: article.modifiedTime }),
+      ...(authorUrls === undefined || authorUrls.length === 0
+        ? {}
+        : { authors: authorUrls }),
+      ...(article.section === undefined ? {} : { section: article.section }),
+      ...(article.keywords === undefined ? {} : { tags: [...article.keywords] }),
+      images: [images.social],
+    },
+    robots: INDEXABLE_ROBOTS,
+    twitter: {
+      card: "summary_large_image",
+      title: article.title,
+      description: article.description,
+      images: [images.social],
+    },
+  };
+}
+
+export function articleJsonLd(site: SearchSite, article: ArticleDiscovery) {
+  const url = articleUrl(site, article);
+  const image = representativeImageUrls(site.origin, article.image).article;
+  return {
+    "@context": "https://schema.org",
+    "@type": article.type,
+    "@id": `${url}#article`,
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": url,
+    },
+    headline: article.title,
+    description: article.description,
+    image: {
+      "@type": "ImageObject",
+      contentUrl: image.url,
+      url: image.url,
+      description: article.image.alt,
+      height: image.height,
+      width: image.width,
+      representativeOfPage: true,
+      ...(article.image.caption === undefined
+        ? {}
+        : { caption: article.image.caption }),
+      ...(article.image.credit === undefined
+        ? {}
+        : { creditText: article.image.credit }),
+    },
+    ...(article.publishedTime === undefined
+      ? {}
+      : { datePublished: article.publishedTime }),
+    ...(article.modifiedTime === undefined
+      ? {}
+      : { dateModified: article.modifiedTime }),
+    ...(article.authors === undefined
+      ? {}
+      : { author: article.authors.map((author) => partyJsonLd(site, author)) }),
+    ...(article.publisher === undefined
+      ? {}
+      : { publisher: partyJsonLd(site, article.publisher) }),
+    ...(article.isPartOfPath === undefined
+      ? {}
+      : {
+        isPartOf: {
+          "@id": `${absoluteWebUrl(site.origin, article.isPartOfPath)}#website`,
+        },
+      }),
+    ...(article.isAccessibleForFree === undefined
+      ? {}
+      : { isAccessibleForFree: article.isAccessibleForFree }),
+    inLanguage: site.language ?? "en-US",
+    ...(article.section === undefined
+      ? {}
+      : { articleSection: article.section }),
+    ...(article.keywords === undefined
+      ? {}
+      : { keywords: [...article.keywords] }),
+    ...(article.citations === undefined
+      ? {}
+      : { citation: [...article.citations] }),
+  } as const;
+}
+
+export function createArticleSitemapPath(
+  article: ArticleDiscovery,
+): SitemapPath {
+  assertOwnedPath(article.canonicalPath);
+  assertRepresentativeImage(article.image);
+  const lastModified = article.modifiedTime ?? article.publishedTime;
+  if (lastModified !== undefined) {
+    assertIsoDateTime(lastModified, "Article sitemap lastModified");
+  }
+  return {
+    images: [article.image.path],
+    ...(lastModified === undefined ? {} : { lastModified }),
+    path: article.canonicalPath,
+  };
+}
+
+export function createAtomImageEnclosure(
+  origin: SearchSite["origin"],
+  image: RepresentativeImage,
+): AtomImageEnclosure {
+  assertRepresentativeImage(image);
+  return {
+    href: absoluteWebUrl(origin, image.path),
+    rel: "enclosure",
+    type: image.contentType,
+  };
+}
+
+export function createRssImageEnclosure(
+  origin: SearchSite["origin"],
+  image: RepresentativeImage,
+  length: number,
+): RssImageEnclosure {
+  assertRepresentativeImage(image);
+  if (!Number.isSafeInteger(length) || length < 0) {
+    throw new RangeError("RSS enclosure length must be a nonnegative safe integer.");
+  }
+  return {
+    length,
+    type: image.contentType,
+    url: absoluteWebUrl(origin, image.path),
+  };
 }
 
 function socialImage(site: SearchSite) {

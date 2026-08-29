@@ -1,6 +1,6 @@
 {
   "name": "@hraness/web-discovery",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Validated Next.js metadata, crawler, sitemap, JSON-LD, and social-image primitives.",
   "license": "MIT",
   "type": "module",
