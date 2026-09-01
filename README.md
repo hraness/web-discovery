@@ -1,12 +1,12 @@
-# @hraness/web-discovery
+# Web Discovery
 
-Validated Next.js metadata, crawler, sitemap, JSON-LD, and social-image primitives.
+Give search engines, social previews, feeds, and people the same account of a Next.js site. `@hraness/web-discovery` derives metadata, crawler policy, sitemaps, JSON-LD, manifests, IndexNow payloads, and social cards from checked consumer-owned records.
 
-The package keeps a public site's discovery surfaces coherent from one checked HTTPS origin. Product titles, descriptions, routes, update dates, crawler decisions, and visual identity stay in the application.
+The package owns the projection. Your application still owns every product fact, route, date, image, and visual decision.
 
-## Install
+## Install the reviewed release
 
-Pin the immutable GitHub release:
+Pin the immutable `v0.3.0` tag:
 
 ```json
 {
@@ -16,25 +16,26 @@ Pin the immutable GitHub release:
 }
 ```
 
-Then install with Bun:
-
 ```sh
 bun install
 ```
 
-The package supports Next.js 16.2 through 16.x and React 19. It runs under Node.js 20.9 or newer.
+The package supports Next.js 16.2 through 16.x, React 19, and Node.js 20.9 or newer.
 
-## Metadata
+## Prove one site across four surfaces
+
+Define the public facts once, then pass that same record to the Next.js metadata routes and structured-data renderer:
 
 ```ts
 import {
   createPublicRobots,
   createPublicSiteMetadata,
   createSitemap,
+  websiteJsonLd,
   type SearchSite,
 } from "@hraness/web-discovery";
 
-const site = {
+export const site = {
   description: "A useful public browser tool.",
   name: "Example",
   origin: "https://example.com",
@@ -47,16 +48,33 @@ export const sitemap = () => createSitemap(site.origin, [
   { path: "/", priority: 1 },
   { path: "/guide" },
 ]);
+export const schema = websiteJsonLd(site);
 ```
 
-Origins must be bare HTTPS origins. Owned paths must be root-relative and cannot contain a query, fragment, foreign origin, or spelling that URL parsing would normalize.
+That example produces one inspectable trace:
 
-Use `createPrivateSiteMetadata` and `createPrivateRobots` for private surfaces. The private metadata builder applies page-level `noindex` and omits canonical and social metadata. Crawler policy is not authentication or authorization.
+```text
+canonical       https://example.com/
+Open Graph URL  https://example.com/
+social image    https://example.com/opengraph-image (1200 × 630)
+robots sitemap  https://example.com/sitemap.xml
+sitemap URLs    https://example.com/, https://example.com/guide
+schema @id      https://example.com/#website
+```
 
-## Representative article images
+An origin with a path or credentials fails before output. So does a foreign, query-bearing, fragment-bearing, or normalized owned path. Duplicate sitemap URLs and malformed social-card colors fail closed as well.
 
-Keep the article's visible image, social crop, metadata, schema, feed, and
-sitemap entry bound to one consumer-owned record:
+## Keep public and private discovery separate
+
+Use `createPublicSiteMetadata` and `createPublicRobots` for an indexable surface. The public metadata includes the canonical, Open Graph, Twitter, and page-level indexing fields derived from the same origin.
+
+Use `createPrivateSiteMetadata` and `createPrivateRobots` for a private surface. The private metadata applies page-level `noindex` and omits canonical and social previews.
+
+Crawler policy is not access control. A private route still needs authentication and authorization in the application.
+
+## Project one article image everywhere
+
+Keep the visible image, social crop, metadata, schema, feed enclosure, and image sitemap entry bound to one consumer-owned record:
 
 ```ts
 import {
@@ -89,21 +107,17 @@ const article = {
   type: "BlogPosting",
 } as const satisfies ArticleDiscovery;
 
-export const metadata = createArticleMetadata(site, article);
+export const articleMetadata = createArticleMetadata(site, article);
 export const articleSchema = articleJsonLd(site, article);
 export const sitemapEntry = createArticleSitemapPath(article);
 export const atomImage = createAtomImageEnclosure(site.origin, article.image);
 ```
 
-Render the image and its caption in the page's initial HTML. Keep any asset
-hash, generation receipt, prompt digest, or source provenance in the same
-application registry; those review fields are intentionally not part of this
-product-neutral package. `createArticleMetadata` uses the social crop when one
-exists, while schema, Atom, and the image sitemap use the visible article
-image. RSS callers can use `createRssImageEnclosure` with the checked byte
-length.
+Render that image and caption in the page's initial HTML. The social crop appears in social metadata; the visible article image appears in schema, Atom, and the image sitemap. RSS callers can add the checked byte length with `createRssImageEnclosure`.
 
-## JSON-LD
+Asset hashes, prompts, generation receipts, and source provenance stay in the application's registry. They are review evidence, not product-neutral discovery metadata.
+
+## Render safe JSON-LD
 
 ```tsx
 import { websiteJsonLd } from "@hraness/web-discovery";
@@ -114,9 +128,9 @@ export function WebsiteSchema() {
 }
 ```
 
-`JsonLdScript` escapes data for an HTML script context. Emit only structured data that describes visible content.
+`JsonLdScript` escapes `<`, `>`, `&`, and Unicode line separators for an HTML script context. Emit schema only when the page visibly supports every claim it contains.
 
-## Social images
+## Generate a deterministic social card
 
 ```tsx
 import {
@@ -136,18 +150,50 @@ export default function OpenGraphImage() {
 }
 ```
 
-The response embeds the official Nebula Sans Book and Bold OTF payloads from the immutable `@hraness/design-kit` release. It stays deterministic and uses no remote assets or runtime filesystem lookups. Applications can pass explicit theme colors while retaining ownership of their visual identity. Consumer-owned cards that deliberately use serif or monospace typography remain separate, explicit compositions.
+The 1200 × 630 response embeds Nebula Sans Book and Bold from the immutable Design Kit dependency. It performs no remote asset fetch or runtime filesystem lookup. Pass six-digit hex theme colors to preserve the application's identity; keep a consumer-owned composition when the card deliberately uses serif or monospace typography.
 
-## Development
+## Choose the smallest interface
 
-Use Bun 1.3.14 and Node 24:
+| Import | Use it for | Boundary |
+| --- | --- | --- |
+| `@hraness/web-discovery` | URLs, public/private metadata and robots, sitemaps, manifests, IndexNow, site/article schema, and feed images | Product-neutral data builders |
+| `@hraness/web-discovery/json-ld` | One safely serialized React `<script type="application/ld+json">` | React rendering only |
+| `@hraness/web-discovery/social-image` | One deterministic Next.js `ImageResponse` | Next.js social-image rendering only |
+
+The root package does not crawl a site, inspect rendered HTML, submit an IndexNow request, generate editorial artwork, or decide whether a claim is true. Those effects and decisions remain with the consumer.
+
+## Verify the packed contract
 
 ```sh
 bun install --frozen-lockfile
 bun run check
 ```
 
-The complete check validates the repository inventory and public boundary, lints and typechecks the source, rebuilds the committed distribution, runs examples and property tests, packs the release artifact, imports every runtime export and renders a PNG with genuine Node, typechecks an installed consumer under Bundler and NodeNext resolution, and compiles the package in a real Next.js production build.
+The complete check validates repository inventory and the public boundary, lints and typechecks the source, rebuilds the three committed runtime exports, runs deterministic and property tests, and packs the release. The package smoke then imports every runtime export and renders a PNG with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
+
+## Questions
+
+### Can `robots.txt` make a page private?
+
+No. Use application authentication and authorization. The private builders add the correct discovery signals, but crawlers are not an access-control boundary.
+
+### Does the package verify that structured data is true?
+
+It validates and projects the supplied record. The application must show the same facts in visible content and must not supply invented reviews, prices, dates, authorship, or other claims.
+
+### Can paths include tracking queries or fragments?
+
+No. Owned paths are canonical, root-relative paths. Queries, fragments, foreign origins, protocol-relative URLs, and spellings that URL parsing would normalize are rejected.
+
+### Does every site need the shared social-card typography?
+
+No. Use the shared renderer for proportional sans-serif cards. Keep a product-owned renderer when typography or composition is part of that product's identity.
+
+## Change the projection carefully
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before changing a public builder. Add a deterministic example for each regression and a property test for every parsing, normalization, ordering, serialization, or round-trip law.
+
+Report suspected vulnerabilities privately as described in [SECURITY.md](./SECURITY.md).
 
 ## License
 
