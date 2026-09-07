@@ -6,12 +6,12 @@ The package owns the projection. Your application still owns every product fact,
 
 ## Install the reviewed release
 
-Pin the immutable `v0.3.0` tag:
+Pin the immutable `v0.3.1` tag:
 
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.3.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.3.1"
   }
 }
 ```
@@ -150,7 +150,7 @@ export default function OpenGraphImage() {
 }
 ```
 
-The 1200 × 630 response embeds Nebula Sans Book and Bold from the immutable Design Kit dependency. It performs no remote asset fetch or runtime filesystem lookup. Pass six-digit hex theme colors to preserve the application's identity; keep a consumer-owned composition when the card deliberately uses serif or monospace typography.
+The 1200 × 630 response embeds Nebula Sans Book and Bold through the generated `@hraness/design-kit/fonts/nebula-sans/social` export in immutable Design Kit v0.5.0. The font payloads are byte-identical to those supplied by v0.2.1. The renderer performs no remote asset fetch or runtime filesystem lookup. Its inline layout is input to Next.js `ImageResponse`, which produces PNG output; consumers do not load a stylesheet for this renderer. Pass six-digit hex theme colors to preserve the application's identity; keep a consumer-owned composition when the card deliberately uses serif or monospace typography.
 
 ## Choose the smallest interface
 

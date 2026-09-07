@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, mock, test } from "bun:test";
 import type { ReactElement } from "react";
 
@@ -92,7 +93,20 @@ describe("shared social images", () => {
         weight: 700,
       },
     ]);
-    expect(image.options.fonts?.every(({ data }) => data.byteLength > 0))
-      .toBe(true);
+    // Design Kit v0.2.1 and v0.5.0 publish these same official OTF payloads.
+    // Hash the buffers actually passed to ImageResponse, not a package label.
+    expect(image.options.fonts?.map(({ data }) => ({
+      bytes: data.byteLength,
+      sha256: createHash("sha256").update(new Uint8Array(data)).digest("hex"),
+    }))).toEqual([
+      {
+        bytes: 140_008,
+        sha256: "4cc650f856591af1affc4add4f50e260c8239a2542bafe77909b78006023f091",
+      },
+      {
+        bytes: 145_348,
+        sha256: "91617d3e2281e8213f64f6bf359f387022d3149b35000b38365c32130a25bfa8",
+      },
+    ]);
   });
 });

@@ -124,7 +124,7 @@ if (JSON.stringify(manifest.peerDependencies) !== JSON.stringify({
   throw new Error("package must declare only the supported Next.js and React peers");
 }
 if (JSON.stringify(manifest.dependencies) !== JSON.stringify({
-  "@hraness/design-kit": "github:hraness/design-kit#v0.2.1",
+  "@hraness/design-kit": "github:hraness/design-kit#v0.5.0",
 })) {
   throw new Error("package must pin only the reviewed Design Kit release");
 }
