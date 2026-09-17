@@ -11,7 +11,7 @@ Pin the immutable `v0.4.0` tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.5.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.6.0"
   }
 }
 ```
@@ -154,6 +154,33 @@ export default function OpenGraphImage() {
 
 The 1200 × 630 response embeds Nebula Sans Book and Bold through the generated `@hraness/design-kit/fonts/nebula-sans/social` export in immutable Design Kit v0.5.0. The font payloads are byte-identical to those supplied by v0.2.1. The renderer performs no remote asset fetch or runtime filesystem lookup. Its inline layout is input to Next.js `ImageResponse`, which produces PNG output; consumers do not load a stylesheet for this renderer. Pass six-digit hex theme colors to preserve the application's identity; keep a consumer-owned composition when the card deliberately uses serif or monospace typography.
 
+Static sites without a Next.js runtime import the same layout through `@hraness/web-discovery/social-image/card`, which carries no `next` import. `createSocialImageCard` returns the React element, its embedded fonts, and the card dimensions so a checked script can rasterize with `satori` and `@resvg/resvg-js`:
+
+```ts
+import { createSocialImageCard } from "@hraness/web-discovery/social-image/card";
+import satori from "satori";
+import { Resvg } from "@resvg/resvg-js";
+
+const card = createSocialImageCard({
+  description: "A useful public browser tool.",
+  domain: "example.com",
+  title: "Example",
+});
+const svg = await satori(card.element, {
+  fonts: card.fonts.map((font) => ({
+    data: font.data,
+    name: font.name,
+    style: font.style,
+    weight: font.weight,
+  })),
+  height: card.height,
+  width: card.width,
+});
+const png = new Resvg(svg).render().asPng();
+```
+
+The consumer supplies `satori` and `@resvg/resvg-js`; they are rendering tools, not package dependencies.
+
 ## Choose the smallest interface
 
 | Import | Use it for | Boundary |
@@ -161,6 +188,7 @@ The 1200 × 630 response embeds Nebula Sans Book and Bold through the generated 
 | `@hraness/web-discovery` | URLs, public/private metadata and robots, sitemaps, manifests, IndexNow, site, article, breadcrumb, collection, work, and album schema, and feed images | Product-neutral data builders |
 | `@hraness/web-discovery/json-ld` | One safely serialized React `<script type="application/ld+json">` | React rendering only |
 | `@hraness/web-discovery/social-image` | One deterministic Next.js `ImageResponse` | Next.js social-image rendering only |
+| `@hraness/web-discovery/social-image/card` | The same layout as a React element with fonts and dimensions | Next.js-free scripted rendering |
 
 The root package does not crawl a site, inspect rendered HTML, submit an IndexNow request, generate editorial artwork, or decide whether a claim is true. Those effects and decisions remain with the consumer.
 
@@ -171,7 +199,7 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The complete check validates repository inventory and the public boundary, lints and typechecks the source, rebuilds the three committed runtime exports, runs deterministic and property tests, and packs the release. The package smoke then imports every runtime export and renders a PNG with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
+The complete check validates repository inventory and the public boundary, lints and typechecks the source, rebuilds the four committed runtime exports, runs deterministic and property tests, and packs the release. The package smoke then imports every runtime export, renders a PNG through `ImageResponse` and again through `satori` plus `@resvg/resvg-js` with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
 
 ## Questions
 

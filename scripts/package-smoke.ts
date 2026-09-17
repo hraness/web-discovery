@@ -6,14 +6,17 @@ const importSpecifiers = [
   packageName,
   `${packageName}/json-ld`,
   `${packageName}/social-image`,
+  `${packageName}/social-image/card`,
 ];
 const verificationPackages = [
+  "@resvg/resvg-js@2.6.2",
   "@types/node@^24.10.0",
   "@types/react@^19.2.14",
   "@types/react-dom@^19.2.3",
   "next@16.2.12",
   "react@19.2.3",
   "react-dom@19.2.3",
+  "satori@0.33.4",
   "typescript@^6.0.3",
 ];
 
@@ -125,6 +128,20 @@ try {
       "if (bytes.length < 1_000 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error(\"installed social-image export did not render a PNG\");",
     ].join(" "),
   ], consumer);
+  await run([
+    nodeExecutable,
+    "--input-type=module",
+    "-e",
+    [
+      `const { createSocialImageCard } = await import(${JSON.stringify(`${packageName}/social-image/card`)});`,
+      'const { default: satori } = await import("satori");',
+      'const { Resvg } = await import("@resvg/resvg-js");',
+      'const card = createSocialImageCard({ description: "Scripted social image", domain: "example.com", title: "Card export" });',
+      'const svg = await satori(card.element, { fonts: card.fonts.map((font) => ({ data: font.data, name: font.name, style: font.style, weight: font.weight })), height: card.height, width: card.width });',
+      'const png = new Resvg(svg).render().asPng();',
+      "if (png.length < 1_000 || png[0] !== 137 || png[1] !== 80 || png[2] !== 78 || png[3] !== 71) throw new Error(\"card export did not rasterize through satori and resvg\");",
+    ].join(" "),
+  ], consumer);
 
   const installedRoot = join(
     consumer,
@@ -145,6 +162,7 @@ try {
       'import { articleJsonLd, createArticleMetadata, createArticleSitemapPath, createAtomImageEnclosure, createPublicSiteMetadata, createRssImageEnclosure, parseOwnedPath, type ArticleDiscovery, type SearchSite } from "@hraness/web-discovery";',
       'import { JsonLdScript } from "@hraness/web-discovery/json-ld";',
       'import { createSocialImageResponse } from "@hraness/web-discovery/social-image";',
+      'import { createSocialImageCard, type SocialImageDetails } from "@hraness/web-discovery/social-image/card";',
       'const site = { description: "Example", name: "Example", origin: "https://example.com", title: "Example" } as const satisfies SearchSite;',
       "const metadata = createPublicSiteMetadata(site);",
       'const article = { canonicalPath: parseOwnedPath("/writing/example"), description: "Example article", image: { alt: "A representative example", contentType: "image/webp", height: 864, path: parseOwnedPath("/images/example.webp"), social: { height: 630, path: parseOwnedPath("/images/example-social.webp"), width: 1200 }, width: 1536 }, title: "Example article", type: "BlogPosting" } as const satisfies ArticleDiscovery;',
@@ -155,7 +173,9 @@ try {
       "const rssEnclosure = createRssImageEnclosure(site.origin, article.image, 12_345);",
       'const schema = <JsonLdScript data={{ "@type": "WebSite" }} id="schema" />;',
       'const image = createSocialImageResponse({ description: "Example", domain: "example.com", title: "Example" });',
-      "void [metadata, articleMetadata, articleSchema, sitemapPath, atomEnclosure, rssEnclosure, schema, image];",
+      'const cardDetails = { description: "Example", domain: "example.com", title: "Example" } as const satisfies SocialImageDetails;',
+      "const card = createSocialImageCard(cardDetails);",
+      "void [metadata, articleMetadata, articleSchema, sitemapPath, atomEnclosure, rssEnclosure, schema, image, card];",
       "",
     ].join("\n"),
   );

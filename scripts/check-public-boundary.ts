@@ -113,9 +113,14 @@ const expectedExports = {
     import: "./dist/social-image.js",
     default: "./dist/social-image.js",
   },
+  "./social-image/card": {
+    types: "./src/social-image-card.tsx",
+    import: "./dist/social-image-card.js",
+    default: "./dist/social-image-card.js",
+  },
 };
 if (JSON.stringify(manifest.exports) !== JSON.stringify(expectedExports)) {
-  throw new Error("package exports must expose the three reviewed entrypoints");
+  throw new Error("package exports must expose the four reviewed entrypoints");
 }
 if (JSON.stringify(manifest.peerDependencies) !== JSON.stringify({
   next: ">=16.2.0 <17.0.0",
@@ -147,14 +152,21 @@ const socialImageSource = await readFile(
 if (!socialImageSource.includes('from "next/og.js"')) {
   throw new Error("social-image runtime must use the Node-compatible Next.js export");
 }
-if (!socialImageSource.includes(
+const socialImageCardSource = await readFile(
+  join(repositoryRoot, "src/social-image-card.tsx"),
+  "utf8",
+);
+if (!socialImageCardSource.includes(
   'from "@hraness/design-kit/fonts/nebula-sans/social"',
 )) {
-  throw new Error("social-image runtime must use the reviewed Nebula Sans payload export");
+  throw new Error("social-image card must use the reviewed Nebula Sans payload export");
 }
-if (!socialImageSource.includes('fontFamily: "Nebula Sans"')) {
+if (!socialImageCardSource.includes('fontFamily: "Nebula Sans"')) {
   throw new Error("social-image proportional copy must use Nebula Sans");
 }
-if (/Arial|Helvetica/gu.test(socialImageSource)) {
-  throw new Error("social-image runtime must not retain legacy sans fallbacks");
+if (/Arial|Helvetica/gu.test(socialImageCardSource)) {
+  throw new Error("social-image card must not retain legacy sans fallbacks");
+}
+if (/from "next|from 'next/u.test(socialImageCardSource)) {
+  throw new Error("social-image card must stay free of Next.js imports");
 }

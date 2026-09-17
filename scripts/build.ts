@@ -15,6 +15,7 @@ for (const { entrypoint, output } of [
   { entrypoint: "./src/discovery.ts", output: "index.js" },
   { entrypoint: "./src/json-ld.tsx", output: "json-ld.js" },
   { entrypoint: "./src/social-image.tsx", output: "social-image.js" },
+  { entrypoint: "./src/social-image-card.tsx", output: "social-image-card.js" },
 ] as const) {
   const result = await Bun.build({
     entrypoints: [entrypoint],
