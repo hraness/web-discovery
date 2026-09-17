@@ -11,7 +11,7 @@ Pin the immutable `v0.4.0` tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.4.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.5.0"
   }
 }
 ```
