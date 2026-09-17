@@ -3,6 +3,7 @@ import fc from "fast-check";
 
 import {
   absoluteWebUrl,
+  breadcrumbJsonLd,
   createAtomImageEnclosure,
   createSitemap,
   parseOwnedPath,
@@ -66,6 +67,27 @@ describe("web discovery laws", () => {
         });
         expect(createAtomImageEnclosure(origin, image).href).toBe(
           `${origin}${path}`,
+        );
+      },
+    ));
+  });
+
+  test("numbers breadcrumb steps in supplied order with absolute items", () => {
+    fc.assert(fc.property(
+      fc.uniqueArray(ownedPath, { minLength: 1, maxLength: 12 }),
+      (paths) => {
+        const schema = breadcrumbJsonLd(
+          origin,
+          paths.map((path, index) => ({
+            name: `step ${String(index)}`,
+            path: parseOwnedPath(path),
+          })),
+        );
+        expect(schema.itemListElement.map(({ position }) => position)).toEqual(
+          paths.map((_, index) => index + 1),
+        );
+        expect(schema.itemListElement.map(({ item }) => item)).toEqual(
+          paths.map((path) => `${origin}${path}`),
         );
       },
     ));

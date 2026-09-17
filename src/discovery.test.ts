@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   absoluteWebUrl,
   articleJsonLd,
+  breadcrumbJsonLd,
+  collectionPageJsonLd,
   createArticleMetadata,
   createArticleSitemapPath,
   createAtomImageEnclosure,
@@ -14,6 +16,8 @@ import {
   createRssImageEnclosure,
   createSitemap,
   createWebManifest,
+  creativeWorkJsonLd,
+  musicAlbumJsonLd,
   NOINDEX_ROBOTS,
   parseOwnedPath,
   profilePageJsonLd,
@@ -315,6 +319,190 @@ describe("web discovery foundations", () => {
       isAccessibleForFree: true,
       offers: { price: 0, priceCurrency: "USD" },
     });
+  });
+
+  test("binds breadcrumb and collection schema to owned paths", () => {
+    expect(breadcrumbJsonLd(site.origin, [
+      { name: "example", path: "/" },
+      { name: "guides", path: "/guides" },
+    ])).toEqual({
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          item: "https://example.com/",
+          name: "example",
+          position: 1,
+        },
+        {
+          "@type": "ListItem",
+          item: "https://example.com/guides",
+          name: "guides",
+          position: 2,
+        },
+      ],
+    });
+    expect(() => breadcrumbJsonLd(site.origin, [])).toThrow("at least one");
+
+    expect(collectionPageJsonLd(site, {
+      breadcrumb: [
+        { name: "example", path: "/" },
+        { name: "guides", path: "/guides" },
+      ],
+      dateModified: "2026-09-16",
+      description: "Every guide.",
+      items: [
+        { name: "one", url: "https://example.com/guides/one" },
+        { name: "external", url: "https://other.example/source" },
+      ],
+      name: "guides",
+      path: "/guides",
+    })).toMatchObject({
+      "@type": "CollectionPage",
+      "@id": "https://example.com/guides#collection",
+      dateModified: "2026-09-16",
+      isPartOf: { "@id": "https://example.com/#website" },
+      breadcrumb: {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            item: "https://example.com/",
+            name: "example",
+            position: 1,
+          },
+          {
+            item: "https://example.com/guides",
+            name: "guides",
+            position: 2,
+          },
+        ],
+      },
+      mainEntity: {
+        "@type": "ItemList",
+        numberOfItems: 2,
+        itemListElement: [
+          { name: "one", position: 1, url: "https://example.com/guides/one" },
+          { name: "external", position: 2, url: "https://other.example/source" },
+        ],
+      },
+    });
+  });
+
+  test("scopes creative work and album schema to their visible pages", () => {
+    expect(creativeWorkJsonLd(site, {
+      author: { kind: "Person", name: "Example Person", path: "/about" },
+      creditText: "Reviewed by the example desk.",
+      datePublished: "2026-09-16",
+      description: "A chronicle.",
+      genre: "fiction",
+      name: "fiction",
+      path: "/fiction",
+    })).toMatchObject({
+      "@type": "CreativeWork",
+      "@id": "https://example.com/fiction#work",
+      author: {
+        "@type": "Person",
+        name: "Example Person",
+        url: "https://example.com/about",
+      },
+      creditText: "Reviewed by the example desk.",
+      datePublished: "2026-09-16",
+      genre: "fiction",
+      isPartOf: { "@id": "https://example.com/#website" },
+    });
+
+    expect(creativeWorkJsonLd(site, {
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toMatchObject({
+      "@type": "CreativeWork",
+      "@id": "https://example.com/fiction#work",
+    });
+    expect(creativeWorkJsonLd(site, {
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).not.toHaveProperty("author");
+
+    expect(musicAlbumJsonLd(site, {
+      byArtist: { kind: "MusicGroup", name: "Example", path: "/example" },
+      description: "Five tracks.",
+      name: "valhalla",
+      path: "/valhalla",
+      tracks: [
+        { durationSeconds: 95, name: "valhalla" },
+        { name: "takeoff" },
+      ],
+    })).toMatchObject({
+      "@type": "MusicAlbum",
+      "@id": "https://example.com/valhalla#album",
+      byArtist: {
+        "@type": "MusicGroup",
+        name: "Example",
+        url: "https://example.com/example",
+      },
+      isPartOf: { "@id": "https://example.com/#website" },
+      numTracks: 2,
+      track: [
+        {
+          "@type": "MusicRecording",
+          duration: "PT95S",
+          name: "valhalla",
+          position: 1,
+        },
+        { "@type": "MusicRecording", name: "takeoff", position: 2 },
+      ],
+    });
+  });
+
+  test("rejects malformed page, work, and album records before emitting schema", () => {
+    expect(() => collectionPageJsonLd(site, {
+      breadcrumb: [],
+      description: "Every guide.",
+      items: [],
+      name: "guides",
+      path: "/guides",
+    })).toThrow("at least one");
+    expect(() => collectionPageJsonLd(site, {
+      breadcrumb: [{ name: "example", path: "/" }],
+      description: "Every guide.",
+      items: [
+        {
+          name: "one",
+          url: "http://insecure.example/one" as `https://${string}`,
+        },
+      ],
+      name: "guides",
+      path: "/guides",
+    })).toThrow("absolute HTTPS URL");
+    expect(() => collectionPageJsonLd(site, {
+      breadcrumb: [{ name: "example", path: "/" }],
+      description: "Every guide.",
+      items: [{ name: " ", url: "https://example.com/guides/one" }],
+      name: "guides",
+      path: "/guides",
+    })).toThrow("Collection item name");
+    expect(() => creativeWorkJsonLd(site, {
+      description: "A chronicle.",
+      name: " ",
+      path: "/fiction",
+    })).toThrow("Creative work name");
+    expect(() => musicAlbumJsonLd(site, {
+      byArtist: { kind: "MusicGroup", name: "Example" },
+      description: "Five tracks.",
+      name: "valhalla",
+      path: "/valhalla",
+      tracks: [{ durationSeconds: 0, name: "valhalla" }],
+    })).toThrow("positive safe integer");
+    expect(() => musicAlbumJsonLd(site, {
+      byArtist: { kind: "MusicGroup", name: " " },
+      description: "Five tracks.",
+      name: "valhalla",
+      path: "/valhalla",
+      tracks: [{ name: "valhalla" }],
+    })).toThrow("Album artist name");
   });
 
   test("describes a visible personal homepage as a profile page", () => {

@@ -6,12 +6,12 @@ The package owns the projection. Your application still owns every product fact,
 
 ## Install the reviewed release
 
-Pin the immutable `v0.3.1` tag:
+Pin the immutable `v0.4.0` tag:
 
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.3.1"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.4.0"
   }
 }
 ```
@@ -130,6 +130,8 @@ export function WebsiteSchema() {
 
 `JsonLdScript` escapes `<`, `>`, `&`, and Unicode line separators for an HTML script context. Emit schema only when the page visibly supports every claim it contains.
 
+Beyond `websiteJsonLd` and `articleJsonLd`, the root export carries `breadcrumbJsonLd`, `collectionPageJsonLd`, `creativeWorkJsonLd`, and `musicAlbumJsonLd` for pages that visibly publish a trail, a curated list, a work, or an album. Each builder emits only the caller-supplied facts; it never invents dates, authors, or other claims.
+
 ## Generate a deterministic social card
 
 ```tsx
@@ -156,7 +158,7 @@ The 1200 × 630 response embeds Nebula Sans Book and Bold through the generated 
 
 | Import | Use it for | Boundary |
 | --- | --- | --- |
-| `@hraness/web-discovery` | URLs, public/private metadata and robots, sitemaps, manifests, IndexNow, site/article schema, and feed images | Product-neutral data builders |
+| `@hraness/web-discovery` | URLs, public/private metadata and robots, sitemaps, manifests, IndexNow, site, article, breadcrumb, collection, work, and album schema, and feed images | Product-neutral data builders |
 | `@hraness/web-discovery/json-ld` | One safely serialized React `<script type="application/ld+json">` | React rendering only |
 | `@hraness/web-discovery/social-image` | One deterministic Next.js `ImageResponse` | Next.js social-image rendering only |
 
