@@ -107,6 +107,54 @@ export type ArticleDiscovery = Readonly<{
   type: "Article" | "BlogPosting" | "NewsArticle";
 }>;
 
+export type BreadcrumbStep = Readonly<{
+  name: string;
+  path: OwnedPath;
+}>;
+
+export type CollectionPageItem = Readonly<{
+  name: string;
+  url: `https://${string}`;
+}>;
+
+export type CollectionPageDiscovery = Readonly<{
+  breadcrumb: readonly BreadcrumbStep[];
+  dateModified?: string;
+  description: string;
+  items: readonly CollectionPageItem[];
+  name: string;
+  path: OwnedPath;
+}>;
+
+export type SchemaParty = Readonly<{
+  kind: "MusicGroup" | "Organization" | "Person";
+  name: string;
+  path?: OwnedPath;
+}>;
+
+export type CreativeWorkDiscovery = Readonly<{
+  author?: SchemaParty;
+  creditText?: string;
+  datePublished?: string;
+  description: string;
+  genre?: string;
+  name: string;
+  path: OwnedPath;
+}>;
+
+export type MusicAlbumTrack = Readonly<{
+  durationSeconds?: number;
+  name: string;
+}>;
+
+export type MusicAlbumDiscovery = Readonly<{
+  byArtist: SchemaParty;
+  description: string;
+  name: string;
+  path: OwnedPath;
+  tracks: readonly MusicAlbumTrack[];
+}>;
+
 export type AtomImageEnclosure = Readonly<{
   href: string;
   rel: "enclosure";
@@ -171,7 +219,7 @@ function assertNonempty(value: string, label: string): void {
   }
 }
 
-function assertImageDimension(value: number, label: string): void {
+function assertPositiveInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new RangeError(`${label} must be a positive safe integer.`);
   }
@@ -180,8 +228,8 @@ function assertImageDimension(value: number, label: string): void {
 function assertRepresentativeImage(image: RepresentativeImage): void {
   assertOwnedPath(image.path);
   assertNonempty(image.alt, "Representative image alt text");
-  assertImageDimension(image.width, "Representative image width");
-  assertImageDimension(image.height, "Representative image height");
+  assertPositiveInteger(image.width, "Representative image width");
+  assertPositiveInteger(image.height, "Representative image height");
   if (image.caption !== undefined) {
     assertNonempty(image.caption, "Representative image caption");
   }
@@ -190,14 +238,34 @@ function assertRepresentativeImage(image: RepresentativeImage): void {
   }
   if (image.social !== undefined) {
     assertOwnedPath(image.social.path);
-    assertImageDimension(image.social.width, "Social image width");
-    assertImageDimension(image.social.height, "Social image height");
+    assertPositiveInteger(image.social.width, "Social image width");
+    assertPositiveInteger(image.social.height, "Social image height");
   }
 }
 
-function assertArticleParty(party: ArticleParty): void {
-  assertNonempty(party.name, "Article party name");
+function assertSchemaParty(party: SchemaParty, label: string): void {
+  assertNonempty(party.name, `${label} name`);
   if (party.path !== undefined) assertOwnedPath(party.path);
+}
+
+function assertHttpsUrl(value: string, label: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new RangeError(
+      `${label} must be an absolute HTTPS URL; received ${value}.`,
+    );
+  }
+  if (
+    parsed.protocol !== "https:"
+    || parsed.username.length > 0
+    || parsed.password.length > 0
+  ) {
+    throw new RangeError(
+      `${label} must be an absolute HTTPS URL; received ${value}.`,
+    );
+  }
 }
 
 function assertIsoDateTime(value: string, label: string): void {
@@ -212,8 +280,12 @@ function articleUrl(site: SearchSite, article: ArticleDiscovery): string {
   assertNonempty(article.title, "Article title");
   assertNonempty(article.description, "Article description");
   assertRepresentativeImage(article.image);
-  article.authors?.forEach(assertArticleParty);
-  if (article.publisher !== undefined) assertArticleParty(article.publisher);
+  article.authors?.forEach((author) => {
+    assertSchemaParty(author, "Article author");
+  });
+  if (article.publisher !== undefined) {
+    assertSchemaParty(article.publisher, "Article publisher");
+  }
   if (article.publishedTime !== undefined) {
     assertIsoDateTime(article.publishedTime, "Article publishedTime");
   }
@@ -223,8 +295,8 @@ function articleUrl(site: SearchSite, article: ArticleDiscovery): string {
   return absoluteWebUrl(site.origin, article.canonicalPath);
 }
 
-function partyJsonLd(site: SearchSite, party: ArticleParty) {
-  assertArticleParty(party);
+function partyJsonLd(site: SearchSite, party: SchemaParty, label: string) {
+  assertSchemaParty(party, label);
   return {
     "@type": party.kind,
     name: party.name,
@@ -351,10 +423,14 @@ export function articleJsonLd(site: SearchSite, article: ArticleDiscovery) {
       : { dateModified: article.modifiedTime }),
     ...(article.authors === undefined
       ? {}
-      : { author: article.authors.map((author) => partyJsonLd(site, author)) }),
+      : {
+        author: article.authors.map((author) => (
+          partyJsonLd(site, author, "Article author")
+        )),
+      }),
     ...(article.publisher === undefined
       ? {}
-      : { publisher: partyJsonLd(site, article.publisher) }),
+      : { publisher: partyJsonLd(site, article.publisher, "Article publisher") }),
     ...(article.isPartOfPath === undefined
       ? {}
       : {
@@ -685,6 +761,155 @@ export function profilePageJsonLd(
         : { image: absoluteWebUrl(site.origin, person.image) }),
       ...(person.sameAs === undefined ? {} : { sameAs: [...person.sameAs] }),
     },
+  } as const;
+}
+
+function breadcrumbListItems(
+  origin: SearchSite["origin"],
+  steps: readonly BreadcrumbStep[],
+) {
+  if (steps.length === 0) {
+    throw new RangeError("Breadcrumb schema requires at least one step.");
+  }
+  return steps.map((step, index) => {
+    assertNonempty(step.name, "Breadcrumb step name");
+    return {
+      "@type": "ListItem",
+      position: index + 1,
+      name: step.name,
+      item: absoluteWebUrl(origin, step.path),
+    } as const;
+  });
+}
+
+export function breadcrumbJsonLd(
+  origin: SearchSite["origin"],
+  steps: readonly BreadcrumbStep[],
+) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: breadcrumbListItems(origin, steps),
+  } as const;
+}
+
+export function collectionPageJsonLd(
+  site: SearchSite,
+  page: CollectionPageDiscovery,
+) {
+  assertOwnedPath(page.path);
+  assertNonempty(page.name, "Collection page name");
+  assertNonempty(page.description, "Collection page description");
+  page.items.forEach((item) => {
+    assertNonempty(item.name, "Collection item name");
+    assertHttpsUrl(item.url, "Collection item URL");
+  });
+  const url = absoluteWebUrl(site.origin, page.path);
+  return {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "@id": `${url}#collection`,
+    url,
+    name: page.name,
+    description: page.description,
+    ...(page.dateModified === undefined
+      ? {}
+      : { dateModified: page.dateModified }),
+    inLanguage: site.language ?? "en-US",
+    isPartOf: {
+      "@id": `${absoluteWebUrl(site.origin, "/")}#website`,
+    },
+    breadcrumb: {
+      "@type": "BreadcrumbList",
+      itemListElement: breadcrumbListItems(site.origin, page.breadcrumb),
+    },
+    mainEntity: {
+      "@type": "ItemList",
+      numberOfItems: page.items.length,
+      itemListElement: page.items.map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: item.name,
+        url: item.url,
+      })),
+    },
+  } as const;
+}
+
+export function creativeWorkJsonLd(
+  site: SearchSite,
+  work: CreativeWorkDiscovery,
+) {
+  assertOwnedPath(work.path);
+  assertNonempty(work.name, "Creative work name");
+  assertNonempty(work.description, "Creative work description");
+  if (work.author !== undefined) {
+    assertSchemaParty(work.author, "Creative work author");
+  }
+  if (work.creditText !== undefined) {
+    assertNonempty(work.creditText, "Creative work credit text");
+  }
+  const url = absoluteWebUrl(site.origin, work.path);
+  return {
+    "@context": "https://schema.org",
+    "@type": "CreativeWork",
+    "@id": `${url}#work`,
+    url,
+    name: work.name,
+    description: work.description,
+    inLanguage: site.language ?? "en-US",
+    ...(work.genre === undefined ? {} : { genre: work.genre }),
+    ...(work.datePublished === undefined
+      ? {}
+      : { datePublished: work.datePublished }),
+    isPartOf: {
+      "@id": `${absoluteWebUrl(site.origin, "/")}#website`,
+    },
+    ...(work.author === undefined
+      ? {}
+      : { author: partyJsonLd(site, work.author, "Creative work author") }),
+    ...(work.creditText === undefined
+      ? {}
+      : { creditText: work.creditText }),
+  } as const;
+}
+
+export function musicAlbumJsonLd(
+  site: SearchSite,
+  album: MusicAlbumDiscovery,
+) {
+  assertOwnedPath(album.path);
+  assertNonempty(album.name, "Album name");
+  assertNonempty(album.description, "Album description");
+  assertSchemaParty(album.byArtist, "Album artist");
+  album.tracks.forEach((track) => {
+    assertNonempty(track.name, "Album track name");
+    if (track.durationSeconds !== undefined) {
+      assertPositiveInteger(track.durationSeconds, "Album track duration");
+    }
+  });
+  const url = absoluteWebUrl(site.origin, album.path);
+  return {
+    "@context": "https://schema.org",
+    "@type": "MusicAlbum",
+    "@id": `${url}#album`,
+    url,
+    name: album.name,
+    description: album.description,
+    inLanguage: site.language ?? "en-US",
+    byArtist: partyJsonLd(site, album.byArtist, "Album artist"),
+    isPartOf: {
+      "@id": `${absoluteWebUrl(site.origin, "/")}#website`,
+    },
+    numTracks: album.tracks.length,
+    track: album.tracks.map((track, index) => ({
+      "@type": "MusicRecording",
+      position: index + 1,
+      name: track.name,
+      ...(track.durationSeconds === undefined
+        ? {}
+        : { duration: `PT${String(track.durationSeconds)}S` }),
+    })),
   } as const;
 }
 
