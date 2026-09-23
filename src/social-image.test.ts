@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, mock, test } from "bun:test";
+import fc from "fast-check";
 import type { ReactElement } from "react";
 
 type CapturedFont = Readonly<{
@@ -40,9 +41,21 @@ await mock.module("next/og.js", () => ({
 }));
 
 const {
+  createSocialImageCard,
   createSocialImageResponse,
   plainSocialImageTheme,
+  socialImageHeadline,
 } = await import("./social-image");
+
+function renderedText(node: unknown): string[] {
+  if (typeof node === "string" || typeof node === "number") return [String(node)];
+  if (Array.isArray(node)) return node.flatMap(renderedText);
+  if (typeof node === "object" && node !== null && "props" in node) {
+    const { children } = (node as { props: { children?: unknown } }).props;
+    return renderedText(children);
+  }
+  return [];
+}
 
 describe("shared social images", () => {
   test("defaults to the neutral plain-site palette", () => {
@@ -108,5 +121,87 @@ describe("shared social images", () => {
         sha256: "91617d3e2281e8213f64f6bf359f387022d3149b35000b38365c32130a25bfa8",
       },
     ]);
+  });
+
+  test("drops a trailing brand segment from the default headline", () => {
+    expect(socialImageHeadline({
+      domain: "example.com",
+      eyebrow: "Example",
+      title: "Pricing | Example",
+    })).toBe("Pricing");
+    expect(socialImageHeadline({
+      domain: "example.com",
+      title: "Pricing · example.com",
+    })).toBe("Pricing");
+    expect(socialImageHeadline({
+      domain: "example.com",
+      title: "Pricing - EXAMPLE",
+    })).toBe("Pricing");
+  });
+
+  test("keeps title words that are not the brand", () => {
+    expect(socialImageHeadline({
+      domain: "example.com",
+      eyebrow: "Example",
+      title: "Import - Export guide",
+    })).toBe("Import - Export guide");
+    expect(socialImageHeadline({
+      domain: "example.com",
+      eyebrow: "Example",
+      title: "Example",
+    })).toBe("Example");
+    expect(socialImageHeadline({
+      domain: "example.com",
+      title: "Pricing | Plans | Example",
+    })).toBe("Pricing | Plans");
+  });
+
+  test("renders an explicit headline instead of the title", () => {
+    const card = createSocialImageCard({
+      description: "Monthly and annual plans.",
+      domain: "example.com",
+      headline: "Plans for teams",
+      title: "Pricing and plans for teams | Example",
+    });
+    const text = renderedText(card.element).join("\n");
+
+    expect(text).toContain("Plans for teams");
+    expect(text).not.toContain("Pricing and plans");
+  });
+
+  test("renders the page name without the brand suffix by default", () => {
+    const card = createSocialImageCard({
+      description: "Monthly and annual plans.",
+      domain: "example.com",
+      eyebrow: "Example",
+      title: "Pricing | Example",
+    });
+    const text = renderedText(card.element);
+
+    expect(text).toContain("Pricing");
+    expect(text).not.toContain("Pricing | Example");
+  });
+
+  test("derives a headline that is a prefix of the title and drops only the brand", () => {
+    const word = fc.array(
+      fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz".split("")),
+      { minLength: 1, maxLength: 10 },
+    ).map((letters) => letters.join(""));
+    const text = fc.array(
+      fc.oneof(word, fc.constantFrom("|", "·", "-", "–")),
+      { minLength: 1, maxLength: 8 },
+    ).map((words) => words.join(" "));
+    const separator = fc.constantFrom(" | ", " · ", " — ", " – ", " - ");
+
+    fc.assert(fc.property(text, word, separator, (title, brand, between) => {
+      const details = { domain: `${brand}.com`, eyebrow: brand };
+      const plain = socialImageHeadline({ ...details, title });
+      expect(title.startsWith(plain)).toBe(true);
+      expect(plain.length).toBeGreaterThan(0);
+
+      const branded = socialImageHeadline({ ...details, title: `${title}${between}${brand}` });
+      expect(`${title}${between}${brand}`.startsWith(branded)).toBe(true);
+      expect(branded.length).toBeGreaterThanOrEqual(title.trimEnd().length);
+    }));
   });
 });

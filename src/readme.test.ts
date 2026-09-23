@@ -14,7 +14,7 @@ const packageJson = await Bun.file(new URL("../package.json", import.meta.url)).
 };
 
 const site = {
-  description: "A useful public browser tool.",
+  description: "Convert CSV files to charts in your browser.",
   name: "Example",
   origin: "https://example.com",
   title: "Example",
@@ -25,7 +25,22 @@ describe("README product contract", () => {
     expect(readme).toContain(
       `"@hraness/web-discovery": "github:hraness/web-discovery#v${packageJson.version}"`,
     );
-    expect(readme).toContain("The package owns the projection.");
+    expect(readme).toContain(
+      "Your application still supplies every product fact, route, date, image, and visual decision.",
+    );
+  });
+
+  test("names only the current release tag in the install section", () => {
+    const install = readme.slice(readme.indexOf("## Install"), readme.indexOf("\n## ", readme.indexOf("## Install") + 1));
+    const tags = [...install.matchAll(/v\d+\.\d+\.\d+/gu)].map(([tag]) => tag);
+
+    expect(tags.length).toBeGreaterThan(0);
+    expect(new Set(tags)).toEqual(new Set([`v${packageJson.version}`]));
+  });
+
+  test("documents the default social alt text and card headline", () => {
+    expect(readme).toContain("its alt text is the page's social title");
+    expect(readme).toContain("The headline is `headline` when you pass it.");
   });
 
   test("executes the complete first-proof example", () => {
@@ -40,7 +55,7 @@ describe("README product contract", () => {
     expect(metadata.alternates).toEqual({ canonical: "https://example.com/" });
     expect(metadata.openGraph).toMatchObject({
       url: "https://example.com/",
-      images: [{ url: "https://example.com/opengraph-image", width: 1200, height: 630 }],
+      images: [{ alt: "Example", url: "https://example.com/opengraph-image", width: 1200, height: 630 }],
     });
     expect(robots.sitemap).toBe("https://example.com/sitemap.xml");
     expect(sitemap.map(({ url }) => url)).toEqual([
@@ -48,12 +63,13 @@ describe("README product contract", () => {
       "https://example.com/guide",
     ]);
     expect(schema["@id"]).toBe("https://example.com/#website");
+    expect(readme).toContain("image alt       Example");
   });
 
   test("states the public, private, and effect boundaries", () => {
     expect(readme).toContain("Crawler policy is not access control.");
     expect(readme).toContain("does not crawl a site");
-    expect(readme).toContain("Asset hashes, prompts, generation receipts");
+    expect(readme).toContain("The package does not read or emit them.");
     expect(readme).toContain("Bundler and NodeNext");
   });
 });

@@ -498,9 +498,12 @@ export function createRssImageEnclosure(
   };
 }
 
-function socialImage(site: SearchSite) {
+function socialImage(site: SearchSite, socialTitle: string) {
+  // Without a described image, the alt text is the social title, which the
+  // shared card renders as its headline. Pass socialImage.alt when the image
+  // at /opengraph-image shows anything else.
   const image = site.socialImage ?? {
-    alt: `${site.name} — ${site.description}`,
+    alt: socialTitle,
     path: "/opengraph-image" as const,
   };
   return {
@@ -520,8 +523,8 @@ export function createPublicSiteMetadata(
 ): Metadata {
   const canonicalPath = options.canonicalPath ?? "/";
   const canonical = absoluteWebUrl(site.origin, canonicalPath);
-  const image = socialImage(site);
   const socialTitle = site.socialTitle ?? site.title;
+  const image = socialImage(site, socialTitle);
   const alternates = {
     canonical,
     ...(options.feedPath === undefined
