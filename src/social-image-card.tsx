@@ -32,6 +32,12 @@ export type SocialImageDetails = Readonly<{
   description: string;
   domain: string;
   eyebrow?: string;
+  /**
+   * The large text on the card. Defaults to `title` without a trailing brand
+   * segment such as " | Example" when that segment repeats the eyebrow or the
+   * domain, so an SEO page title does not become the card headline verbatim.
+   */
+  headline?: string;
   mark?: ReactNode;
   theme?: Partial<SocialImageTheme>;
   title: string;
@@ -186,13 +192,47 @@ function fontHasGlyph(font: ArrayBuffer, codePoint: number): boolean {
     : formatTwelveHasGlyph(view, offset, codePoint));
 }
 
+const TITLE_SEPARATORS = [" | ", " · ", " — ", " – ", " - "] as const;
+
+function brandKey(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US");
+}
+
+/**
+ * Returns the card headline: `details.headline` when given, otherwise the
+ * title with one trailing brand segment removed. A segment counts as the
+ * brand only when it matches the eyebrow, the domain, or the domain without
+ * its top-level label, ignoring case, so page words are never dropped.
+ */
+export function socialImageHeadline(
+  details: Pick<SocialImageDetails, "domain" | "eyebrow" | "headline" | "title">,
+): string {
+  if (details.headline !== undefined) return details.headline;
+  const domain = details.domain.trim();
+  const brands = new Set(
+    [details.eyebrow, domain, domain.replace(/\.[^.]+$/u, "")]
+      .filter((value): value is string => value !== undefined && value.trim().length > 0)
+      .map(brandKey),
+  );
+  let best: string | undefined;
+  for (const separator of TITLE_SEPARATORS) {
+    const index = details.title.lastIndexOf(separator);
+    if (index <= 0) continue;
+    const page = details.title.slice(0, index).trimEnd();
+    const suffix = details.title.slice(index + separator.length);
+    if (page.length === 0 || !brands.has(brandKey(suffix))) continue;
+    if (best === undefined || page.length > best.length) best = page;
+  }
+  return best ?? details.title;
+}
+
 function normalizeSocialImageText(value: string): string {
   return value.replaceAll("\r\n", "\n").replaceAll("\r", "\n").replaceAll("\t", " ");
 }
 
 function assertSocialImageText(
   value: string,
-  label: "description" | "domain" | "eyebrow" | "title",
+  label: "description" | "domain" | "eyebrow" | "headline" | "title",
   fonts: SocialImageFonts,
 ): void {
   for (const character of value) {
@@ -419,18 +459,22 @@ export function createSocialImageCard(
     eyebrow: details.eyebrow === undefined
       ? undefined
       : normalizeSocialImageText(details.eyebrow),
-    title: normalizeSocialImageText(details.title),
+    headline: normalizeSocialImageText(socialImageHeadline(details)),
   };
   assertSocialImageText(copy.description, "description", fonts);
   assertSocialImageText(copy.domain, "domain", fonts);
   if (copy.eyebrow !== undefined) {
     assertSocialImageText(copy.eyebrow, "eyebrow", fonts);
   }
-  assertSocialImageText(copy.title, "title", fonts);
+  assertSocialImageText(
+    copy.headline,
+    details.headline === undefined ? "title" : "headline",
+    fonts,
+  );
 
   const availableWidth = CARD_WIDTH - CARD_PADDING * 2;
   const maxTextHeight = CARD_HEIGHT - CARD_PADDING * 2 - TOP_BAR_HEIGHT - BOTTOM_RULE_HEIGHT - 40;
-  const fit = fittedCopy(copy.title, copy.description, maxTextHeight, availableWidth);
+  const fit = fittedCopy(copy.headline, copy.description, maxTextHeight, availableWidth);
 
   return {
     element: (

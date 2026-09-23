@@ -2,7 +2,7 @@
 
 - `discovery.ts` defines validated site and article metadata, representative-image projection, crawler policy, sitemap, feed-enclosure, manifest, submission, and structured-data builders.
 - `json-ld.tsx` renders safely serialized JSON-LD at the React boundary.
-- `social-image-card.tsx` builds the deterministic 1200×630 social-card element, embedded fonts, adaptive copy fitting, and mark validation without any Next.js import.
+- `social-image-card.tsx` builds the deterministic 1200×630 social-card element, headline derivation, embedded fonts, adaptive copy fitting, and mark validation without any Next.js import.
 - `social-image.tsx` wraps the card in a Next.js `ImageResponse`.
 - `index.ts` defines the root public export.
 - `*.test.ts` holds deterministic examples and property tests.

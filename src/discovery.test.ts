@@ -33,9 +33,9 @@ const site = {
   description: "A useful public browser tool.",
   name: "Example",
   origin: "https://example.com",
-  socialTitle: "Example — useful browser tool",
+  socialTitle: "Example · Browser tool",
   title: "Example",
-  titleTemplate: "%s — Example",
+  titleTemplate: "%s · Example",
 } as const satisfies SearchSite;
 
 const article = {
@@ -90,6 +90,48 @@ describe("web discovery foundations", () => {
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
       title: site.socialTitle,
+    });
+  });
+
+  test("describes the default social card by its title", () => {
+    const metadata = createPublicSiteMetadata(site);
+    const untitled = createPublicSiteMetadata({
+      description: site.description,
+      name: site.name,
+      origin: site.origin,
+      title: "Example guide",
+    });
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [{ alt: site.socialTitle }],
+    });
+    expect(metadata.twitter).toMatchObject({
+      images: [{ alt: site.socialTitle }],
+    });
+    expect(untitled.openGraph).toMatchObject({
+      images: [{ alt: "Example guide" }],
+    });
+    for (const alt of [metadata, untitled].map(({ openGraph }) =>
+      JSON.stringify(openGraph?.images))) {
+      expect(alt).not.toContain(site.description);
+      expect(alt).not.toContain("\u2014");
+    }
+  });
+
+  test("keeps a consumer-described social image alt", () => {
+    const metadata = createPublicSiteMetadata({
+      ...site,
+      socialImage: {
+        alt: "A chart of daily sign-ups.",
+        path: "/images/social.png",
+      },
+    });
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [{
+        alt: "A chart of daily sign-ups.",
+        url: "https://example.com/images/social.png",
+      }],
     });
   });
 

@@ -21,6 +21,7 @@ export {
   createSocialImageElement,
   plainSocialImageTheme,
   socialImageFonts,
+  socialImageHeadline,
   socialImageMarks,
 } from "./social-image-card.js";
 export type {
