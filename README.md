@@ -1,6 +1,6 @@
 # Web Discovery
 
-`@hraness/web-discovery` builds a Next.js site's metadata, `robots.txt`, sitemap, JSON-LD, web manifest, IndexNow payload, and social card from site and article records you define once. It rejects malformed origins, paths, and colors before producing any output.
+`@hraness/web-discovery` builds a Next.js site's metadata, `robots.txt`, sitemap, JSON-LD, web manifest, IndexNow payload, and social card from site and article records you define once. It rejects malformed origins, paths, and social-card colors before producing any output.
 
 The package turns your records into metadata. Your application still supplies every product fact, route, date, image, and visual decision.
 
@@ -160,7 +160,7 @@ export default function OpenGraphImage() {
 }
 ```
 
-The card shows the eyebrow (or the domain) at the top, a large headline, the description, and the domain at the bottom. The headline is `headline` when you pass it. Otherwise it is `title` with one trailing brand segment removed, such as ` | Example` or ` · example.com`, when that segment matches the eyebrow or the domain; other titles appear unchanged.
+The card shows the eyebrow (or the domain) at the top, a large headline, the description, and the domain at the bottom. The headline is `headline` when you pass it. Otherwise it is `title` with one trailing brand segment removed, such as ` | Example` or ` · example.com`, when that segment matches the eyebrow, the domain, or the domain without its last label (`example`), ignoring case. Other titles appear unchanged.
 
 The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application, and write your own card when it needs serif or monospace type.
 
@@ -209,7 +209,7 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check` validates the repository inventory, checks the export list, peer dependencies, and release workflow permissions, scans the repository for private paths and identities, lints and typechecks the source, rebuilds the four committed runtime exports, runs the example and property tests, and packs the package. The package smoke then imports every runtime export, renders a PNG through `ImageResponse` and again through `satori` plus `@resvg/resvg-js` with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
+`bun run check` validates the repository inventory, checks the four package entry points, the dependency and peer dependency pins, and release workflow permissions, scans the repository for private paths and identities, lints and typechecks the source, rebuilds the four committed runtime exports, runs the example and property tests, and packs the package. The package smoke then imports every runtime export, renders a PNG through `ImageResponse` and again through `satori` plus `@resvg/resvg-js` with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
 
 ## Questions
 

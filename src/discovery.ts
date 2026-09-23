@@ -499,9 +499,9 @@ export function createRssImageEnclosure(
 }
 
 function socialImage(site: SearchSite, socialTitle: string) {
-  // Without a described image, the alt text is the social title, which the
-  // shared card renders as its headline. Pass socialImage.alt when the image
-  // at /opengraph-image shows anything else.
+  // Without a described image, the alt text is the social title. Pass
+  // socialImage.alt when the image at /opengraph-image shows something that
+  // title does not describe.
   const image = site.socialImage ?? {
     alt: socialTitle,
     path: "/opengraph-image" as const,
