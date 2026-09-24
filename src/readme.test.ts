@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  articleJsonLd,
+  blogJsonLd,
+  createAtomFeed,
+  createBlogSitemapPaths,
+  createFeedEntry,
   createPublicRobots,
   createPublicSiteMetadata,
+  createRssFeed,
   createSitemap,
   websiteJsonLd,
+  type ArticleDiscovery,
+  type FeedDiscovery,
   type SearchSite,
 } from "./index.js";
 
@@ -64,6 +72,54 @@ describe("README product contract", () => {
     ]);
     expect(schema["@id"]).toBe("https://example.com/#website");
     expect(readme).toContain("image alt       Example");
+  });
+
+  test("executes the blog, feed, and sitemap example", () => {
+    const post = {
+      authors: [{ kind: "Organization", name: "Example", path: "/" }],
+      blogPath: "/blog",
+      canonicalPath: "/blog/first-post",
+      description: "What the first post explains.",
+      image: {
+        alt: "A chart drawn from a small CSV file.",
+        contentType: "image/png",
+        height: 630,
+        path: "/blog/first-post.png",
+        width: 1200,
+      },
+      publishedTime: "2026-09-23T00:00:00.000Z",
+      publisher: { kind: "Organization", name: "Example", path: "/" },
+      title: "The first post",
+      type: "BlogPosting",
+    } as const satisfies ArticleDiscovery;
+    const feed = {
+      authors: [{ kind: "Organization", name: "Example", path: "/" }],
+      description: "Posts from Example.",
+      homePath: "/blog",
+      path: "/blog/feed.xml",
+      title: "Example blog",
+    } as const satisfies FeedDiscovery;
+
+    const blogSchema = blogJsonLd(site, {
+      description: "Posts from Example.",
+      name: "Example blog",
+      path: "/blog",
+    }, [post]);
+    const atom = createAtomFeed(site, feed, [
+      createFeedEntry(post, { contentHtml: "<p>The post body.</p>" }),
+    ]);
+    const rss = createRssFeed(site, feed, [createFeedEntry(post)]);
+
+    expect(articleJsonLd(site, post).isPartOf?.["@id"]).toBe("https://example.com/blog#blog");
+    expect(blogSchema["@id"]).toBe("https://example.com/blog#blog");
+    expect(readme).toContain("`https://example.com/blog#blog`");
+    expect(createBlogSitemapPaths({ path: "/blog" }, [post])[0]).toEqual({
+      lastModified: "2026-09-23T00:00:00.000Z",
+      path: "/blog",
+    });
+    expect(atom).toContain("<content type=\"html\">&lt;p&gt;The post body.&lt;/p&gt;</content>");
+    expect(rss).toContain("<guid isPermaLink=\"true\">https://example.com/blog/first-post</guid>");
+    expect(readme).toContain("rounds dates to whole seconds");
   });
 
   test("states the public, private, and effect boundaries", () => {

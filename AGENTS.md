@@ -1,7 +1,7 @@
 <!-- kb:context scopes/repository--cdb4ee2aea69 -->
 # Contents
 
-- `src/discovery.ts` owns validated origins, paths, site and article metadata, representative images, crawler policy, sitemaps, feed enclosures, manifests, IndexNow payloads, and structured data.
+- `src/discovery.ts` owns validated origins, paths, site and article metadata, representative images, crawler policy, sitemaps, Atom and RSS feeds, manifests, IndexNow payloads, and structured data.
 - `src/json-ld.tsx` and `src/social-image.tsx` own the React and Next.js rendering boundaries.
 - `src/*.test.ts` holds deterministic examples and property tests for public behavior.
 - `scripts/` contains build, package-smoke, inventory, and public-boundary checks.
