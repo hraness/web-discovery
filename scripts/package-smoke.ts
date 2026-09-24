@@ -133,6 +133,21 @@ try {
     "--input-type=module",
     "-e",
     [
+      `const { createAtomFeed, createRssFeed } = await import(${JSON.stringify(packageName)});`,
+      'const site = { description: "d", name: "Example", origin: "https://example.com", title: "Example" };',
+      'const feed = { authors: [{ kind: "Organization", name: "Example" }], description: "Notes & news", homePath: "/blog", path: "/blog/feed.xml", title: "Example <blog>" };',
+      'const entries = [{ path: "/blog/a", publishedTime: "2026-09-23T00:00:00.000Z", title: "A & B" }];',
+      "const atom = createAtomFeed(site, feed, entries);",
+      "const rss = createRssFeed(site, feed, entries);",
+      "if (!atom.includes(\"<title type=\\\"text\\\">A &amp; B</title>\") || !atom.includes(\"<id>https://example.com/blog/a</id>\")) throw new Error(\"installed Atom builder produced unexpected output\");",
+      "if (!rss.includes(\"<title>Example &lt;blog&gt;</title>\") || !rss.includes(\"<pubDate>Wed, 23 Sep 2026 00:00:00 GMT</pubDate>\")) throw new Error(\"installed RSS builder produced unexpected output\");",
+    ].join(" "),
+  ], consumer);
+  await run([
+    nodeExecutable,
+    "--input-type=module",
+    "-e",
+    [
       `const { createSocialImageCard } = await import(${JSON.stringify(`${packageName}/social-image/card`)});`,
       'const { default: satori } = await import("satori");',
       'const { Resvg } = await import("@resvg/resvg-js");',
@@ -159,7 +174,7 @@ try {
   await writeFile(
     join(consumer, "index.tsx"),
     [
-      'import { articleJsonLd, createArticleMetadata, createArticleSitemapPath, createAtomImageEnclosure, createPublicSiteMetadata, createRssImageEnclosure, parseOwnedPath, type ArticleDiscovery, type SearchSite } from "@hraness/web-discovery";',
+      'import { articleJsonLd, blogJsonLd, createArticleMetadata, createArticleSitemapPath, createAtomFeed, createAtomImageEnclosure, createBlogSitemapPaths, createFeedEntry, createPublicSiteMetadata, createRssFeed, createRssImageEnclosure, parseOwnedPath, type ArticleDiscovery, type FeedDiscovery, type SearchSite } from "@hraness/web-discovery";',
       'import { JsonLdScript } from "@hraness/web-discovery/json-ld";',
       'import { createSocialImageResponse } from "@hraness/web-discovery/social-image";',
       'import { createSocialImageCard, type SocialImageDetails } from "@hraness/web-discovery/social-image/card";',
@@ -171,11 +186,16 @@ try {
       "const sitemapPath = createArticleSitemapPath(article);",
       "const atomEnclosure = createAtomImageEnclosure(site.origin, article.image);",
       "const rssEnclosure = createRssImageEnclosure(site.origin, article.image, 12_345);",
+      'const feed = { description: "Example feed", homePath: parseOwnedPath("/writing"), path: parseOwnedPath("/writing/feed.xml"), title: "Example" } as const satisfies FeedDiscovery;',
+      'const feedEntry = createFeedEntry({ ...article, authors: [{ kind: "Organization", name: "Example" }], publishedTime: "2026-09-23T00:00:00.000Z" });',
+      "const feeds = [createAtomFeed(site, feed, [feedEntry]), createRssFeed(site, feed, [feedEntry])];",
+      'const blogSchema = blogJsonLd(site, { description: "Example blog", name: "Example", path: parseOwnedPath("/writing") }, [article]);',
+      'const blogPaths = createBlogSitemapPaths({ path: parseOwnedPath("/writing") }, [article]);',
       'const schema = <JsonLdScript data={{ "@type": "WebSite" }} id="schema" />;',
       'const image = createSocialImageResponse({ description: "Example", domain: "example.com", title: "Example" });',
       'const cardDetails = { description: "Example", domain: "example.com", title: "Example" } as const satisfies SocialImageDetails;',
       "const card = createSocialImageCard(cardDetails);",
-      "void [metadata, articleMetadata, articleSchema, sitemapPath, atomEnclosure, rssEnclosure, schema, image, card];",
+      "void [metadata, articleMetadata, articleSchema, sitemapPath, atomEnclosure, rssEnclosure, feeds, blogSchema, blogPaths, schema, image, card];",
       "",
     ].join("\n"),
   );

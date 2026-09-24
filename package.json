@@ -1,7 +1,7 @@
 {
   "name": "@hraness/web-discovery",
-  "version": "0.7.0",
-  "description": "Validated Next.js metadata, crawler, sitemap, JSON-LD, and social-image primitives.",
+  "version": "0.8.0",
+  "description": "Validated Next.js metadata, crawler, sitemap, feed, JSON-LD, and social-image primitives.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -91,6 +91,7 @@
     "next": "16.2.12",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "saxes": "^6.0.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.53.0"
   },

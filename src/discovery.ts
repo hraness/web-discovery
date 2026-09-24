@@ -89,6 +89,11 @@ export type ArticleParty = Readonly<{
   path?: OwnedPath;
 }>;
 
+/**
+ * An article names at most one parent: `blogPath` points `isPartOf` at the
+ * visible blog index (`Blog`), while `isPartOfPath` keeps the older reference
+ * to a `WebSite` node. Passing both is rejected.
+ */
 export type ArticleDiscovery = Readonly<{
   authors?: readonly ArticleParty[];
   canonicalPath: OwnedPath;
@@ -97,7 +102,6 @@ export type ArticleDiscovery = Readonly<{
   description: string;
   image: RepresentativeImage;
   isAccessibleForFree?: boolean;
-  isPartOfPath?: OwnedPath;
   keywords?: readonly string[];
   modifiedTime?: string;
   publishedTime?: string;
@@ -105,7 +109,10 @@ export type ArticleDiscovery = Readonly<{
   section?: string;
   title: string;
   type: "Article" | "BlogPosting" | "NewsArticle";
-}>;
+}> & (
+  | Readonly<{ blogPath?: never; isPartOfPath?: OwnedPath }>
+  | Readonly<{ blogPath: OwnedPath; isPartOfPath?: never }>
+);
 
 export type BreadcrumbStep = Readonly<{
   name: string;
@@ -225,8 +232,19 @@ function assertPositiveInteger(value: number, label: string): void {
   }
 }
 
+const IMAGE_CONTENT_TYPES: ReadonlySet<string> = new Set<ImageContentType>([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
 function assertRepresentativeImage(image: RepresentativeImage): void {
   assertOwnedPath(image.path);
+  if (!IMAGE_CONTENT_TYPES.has(image.contentType)) {
+    throw new RangeError(
+      `Representative image contentType must be image/jpeg, image/png, or image/webp; received ${image.contentType}.`,
+    );
+  }
   assertNonempty(image.alt, "Representative image alt text");
   assertPositiveInteger(image.width, "Representative image width");
   assertPositiveInteger(image.height, "Representative image height");
@@ -292,6 +310,22 @@ function articleUrl(site: SearchSite, article: ArticleDiscovery): string {
   if (article.modifiedTime !== undefined) {
     assertIsoDateTime(article.modifiedTime, "Article modifiedTime");
   }
+  if (
+    article.publishedTime !== undefined
+    && article.modifiedTime !== undefined
+    && article.modifiedTime < article.publishedTime
+  ) {
+    throw new RangeError("Article modifiedTime cannot precede publishedTime.");
+  }
+  // The type forbids both parents; this also rejects untyped callers. Read
+  // through a widened view so consumers without exactOptionalPropertyTypes
+  // do not narrow the second check to never.
+  const parents: Readonly<{ blogPath?: string | undefined; isPartOfPath?: string | undefined }> = article;
+  if (parents.blogPath !== undefined && parents.isPartOfPath !== undefined) {
+    throw new RangeError("An article can name blogPath or isPartOfPath, not both.");
+  }
+  if (parents.blogPath !== undefined) assertOwnedPath(parents.blogPath);
+  if (parents.isPartOfPath !== undefined) assertOwnedPath(parents.isPartOfPath);
   return absoluteWebUrl(site.origin, article.canonicalPath);
 }
 
@@ -438,6 +472,15 @@ export function articleJsonLd(site: SearchSite, article: ArticleDiscovery) {
           "@id": `${absoluteWebUrl(site.origin, article.isPartOfPath)}#website`,
         },
       }),
+    ...(article.blogPath === undefined
+      ? {}
+      : {
+        isPartOf: {
+          "@type": "Blog",
+          "@id": `${absoluteWebUrl(site.origin, article.blogPath)}#blog`,
+          url: absoluteWebUrl(site.origin, article.blogPath),
+        },
+      }),
     ...(article.isAccessibleForFree === undefined
       ? {}
       : { isAccessibleForFree: article.isAccessibleForFree }),
@@ -517,7 +560,9 @@ function socialImage(site: SearchSite, socialTitle: string) {
 export function createPublicSiteMetadata(
   site: SearchSite,
   options: Readonly<{
+    atomFeedPath?: OwnedPath;
     canonicalPath?: OwnedPath;
+    /** The RSS 2.0 feed path. */
     feedPath?: OwnedPath;
   }> = {},
 ): Metadata {
@@ -525,15 +570,17 @@ export function createPublicSiteMetadata(
   const canonical = absoluteWebUrl(site.origin, canonicalPath);
   const socialTitle = site.socialTitle ?? site.title;
   const image = socialImage(site, socialTitle);
-  const alternates = {
-    canonical,
+  const feedTypes = {
     ...(options.feedPath === undefined
       ? {}
-      : {
-        types: {
-          "application/rss+xml": absoluteWebUrl(site.origin, options.feedPath),
-        },
-      }),
+      : { "application/rss+xml": absoluteWebUrl(site.origin, options.feedPath) }),
+    ...(options.atomFeedPath === undefined
+      ? {}
+      : { "application/atom+xml": absoluteWebUrl(site.origin, options.atomFeedPath) }),
+  };
+  const alternates = {
+    canonical,
+    ...(Object.keys(feedTypes).length === 0 ? {} : { types: feedTypes }),
   };
 
   return {
@@ -923,4 +970,474 @@ export function serializeJsonLd(value: unknown): string {
     .replaceAll(">", "\\u003e")
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
+}
+
+export type BlogDiscovery = Readonly<{
+  dateModified?: string;
+  description: string;
+  name: string;
+  path: OwnedPath;
+  publisher?: ArticleParty;
+}>;
+
+function articleLastModified(article: ArticleDiscovery): string | undefined {
+  return article.modifiedTime ?? article.publishedTime;
+}
+
+function newestTimestamp(values: readonly (string | undefined)[]): string | undefined {
+  let newest: string | undefined;
+  for (const value of values) {
+    if (value !== undefined && (newest === undefined || value > newest)) {
+      newest = value;
+    }
+  }
+  return newest;
+}
+
+function articlePostUrls(
+  site: SearchSite,
+  articles: readonly ArticleDiscovery[],
+  label: string,
+): (readonly [ArticleDiscovery, string])[] {
+  const seen = new Set<string>();
+  return articles.map((article) => {
+    const url = articleUrl(site, article);
+    if (seen.has(url)) {
+      throw new RangeError(`${label} lists ${url} twice.`);
+    }
+    seen.add(url);
+    return [article, url] as const;
+  });
+}
+
+/**
+ * Builds `Blog` JSON-LD for a visible blog index. Each listed post becomes a
+ * `blogPost` reference whose `@id` matches the node `articleJsonLd` emits on
+ * the post's own page.
+ */
+export function blogJsonLd(
+  site: SearchSite,
+  blog: BlogDiscovery,
+  articles: readonly ArticleDiscovery[],
+) {
+  assertOwnedPath(blog.path);
+  assertNonempty(blog.name, "Blog name");
+  assertNonempty(blog.description, "Blog description");
+  if (blog.publisher !== undefined) {
+    assertSchemaParty(blog.publisher, "Blog publisher");
+  }
+  if (blog.dateModified !== undefined) {
+    assertIsoDateTime(blog.dateModified, "Blog dateModified");
+  }
+  const url = absoluteWebUrl(site.origin, blog.path);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "@id": `${url}#blog`,
+    url,
+    name: blog.name,
+    description: blog.description,
+    inLanguage: site.language ?? "en-US",
+    ...(blog.dateModified === undefined
+      ? {}
+      : { dateModified: blog.dateModified }),
+    isPartOf: {
+      "@id": `${absoluteWebUrl(site.origin, "/")}#website`,
+    },
+    ...(blog.publisher === undefined
+      ? {}
+      : { publisher: partyJsonLd(site, blog.publisher, "Blog publisher") }),
+    blogPost: articlePostUrls(site, articles, "Blog JSON-LD").map(([article, postUrl]) => {
+      if (article.blogPath !== undefined && article.blogPath !== blog.path) {
+        throw new RangeError(
+          `Blog JSON-LD lists ${postUrl}, whose blogPath names ${article.blogPath} instead of ${blog.path}.`,
+        );
+      }
+      return {
+        "@type": article.type,
+        "@id": `${postUrl}#article`,
+        url: postUrl,
+        headline: article.title,
+        description: article.description,
+        ...(article.publishedTime === undefined
+          ? {}
+          : { datePublished: article.publishedTime }),
+        ...(article.modifiedTime === undefined
+          ? {}
+          : { dateModified: article.modifiedTime }),
+      } as const;
+    }),
+  } as const;
+}
+
+/**
+ * Returns sitemap entries for a blog index and its articles, in the order
+ * given. The index entry's `lastModified` is the newest article date unless
+ * `lastModified` is passed.
+ */
+export function createBlogSitemapPaths(
+  blog: Readonly<{ lastModified?: string; path: OwnedPath }>,
+  articles: readonly ArticleDiscovery[],
+): SitemapPath[] {
+  assertOwnedPath(blog.path);
+  if (blog.lastModified !== undefined) {
+    assertIsoDateTime(blog.lastModified, "Blog sitemap lastModified");
+  }
+  const entries = articles.map(createArticleSitemapPath);
+  const lastModified = blog.lastModified
+    ?? newestTimestamp(articles.map(articleLastModified));
+  return [
+    {
+      ...(lastModified === undefined ? {} : { lastModified }),
+      path: blog.path,
+    },
+    ...entries,
+  ];
+}
+
+export const ATOM_FEED_CONTENT_TYPE = "application/atom+xml; charset=utf-8";
+export const RSS_FEED_CONTENT_TYPE = "application/rss+xml; charset=utf-8";
+
+export type FeedDiscovery = Readonly<{
+  /** Feed-level authors. Atom requires them unless every entry has its own. */
+  authors?: readonly ArticleParty[];
+  description: string;
+  /** The HTML page the feed mirrors, such as `/blog`. */
+  homePath: OwnedPath;
+  /** The feed document's own path, such as `/blog/feed.xml`. */
+  path: OwnedPath;
+  rights?: string;
+  title: string;
+  /** Defaults to the newest entry date. Required when there are no entries. */
+  updated?: string;
+}>;
+
+export type FeedEntry = Readonly<{
+  authors?: readonly ArticleParty[];
+  categories?: readonly string[];
+  /** Full HTML body. It is escaped as text, never inserted as markup. */
+  contentHtml?: string;
+  enclosure?: Readonly<{ image: RepresentativeImage; length: number }>;
+  modifiedTime?: string;
+  path: OwnedPath;
+  publishedTime: string;
+  /** Plain-text summary. */
+  summary?: string;
+  title: string;
+}>;
+
+/**
+ * Projects an article record into a feed entry. The article must carry a
+ * `publishedTime`. Pass `imageLength` (the image file's byte length) to add
+ * an image enclosure.
+ */
+export function createFeedEntry(
+  article: ArticleDiscovery,
+  options: Readonly<{
+    contentHtml?: string;
+    imageLength?: number;
+    summary?: string;
+  }> = {},
+): FeedEntry {
+  if (article.publishedTime === undefined) {
+    throw new RangeError("Feed entries require the article's publishedTime.");
+  }
+  return {
+    ...(article.authors === undefined ? {} : { authors: article.authors }),
+    ...(article.keywords === undefined ? {} : { categories: article.keywords }),
+    ...(options.contentHtml === undefined ? {} : { contentHtml: options.contentHtml }),
+    ...(options.imageLength === undefined
+      ? {}
+      : { enclosure: { image: article.image, length: options.imageLength } }),
+    ...(article.modifiedTime === undefined ? {} : { modifiedTime: article.modifiedTime }),
+    path: article.canonicalPath,
+    publishedTime: article.publishedTime,
+    summary: options.summary ?? article.description,
+    title: article.title,
+  };
+}
+
+// XML 1.0 characters: tab, line feed, carriage return, U+0020–U+D7FF,
+// U+E000–U+FFFD, and U+10000–U+10FFFF. Everything else, including lone
+// surrogates, cannot appear in a well-formed document even as a reference.
+// This scans UTF-16 code units directly because a Unicode regular
+// expression class misses some lone surrogates in JavaScriptCore.
+function invalidXmlCodeUnit(value: string): number | undefined {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return unit;
+    }
+    if (
+      (unit >= 0xdc00 && unit <= 0xdfff)
+      || unit === 0xfffe
+      || unit === 0xffff
+      || (unit < 0x20 && unit !== 0x9 && unit !== 0xa && unit !== 0xd)
+    ) {
+      return unit;
+    }
+  }
+  return undefined;
+}
+
+function assertXmlCharacters(value: string, label: string): void {
+  const unit = invalidXmlCodeUnit(value);
+  if (unit !== undefined) {
+    throw new RangeError(
+      `${label} contains U+${unit.toString(16).toUpperCase().padStart(4, "0")}, which XML 1.0 cannot represent.`,
+    );
+  }
+}
+
+function xmlText(value: string, label: string): string {
+  assertXmlCharacters(value, label);
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\r", "&#13;");
+}
+
+function xmlAttribute(value: string, label: string): string {
+  return xmlText(value, label)
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&apos;")
+    .replaceAll("\t", "&#9;")
+    .replaceAll("\n", "&#10;");
+}
+
+type CheckedFeedEntry = Readonly<{
+  entry: FeedEntry;
+  updated: string;
+  url: string;
+}>;
+
+type CheckedFeed = Readonly<{
+  entries: readonly CheckedFeedEntry[];
+  homeUrl: string;
+  selfUrl: string;
+  updated: string;
+}>;
+
+function assertFeedParties(
+  parties: readonly ArticleParty[] | undefined,
+  label: string,
+): void {
+  parties?.forEach((party) => {
+    assertSchemaParty(party, label);
+  });
+}
+
+function checkFeed(
+  site: SearchSite,
+  feed: FeedDiscovery,
+  entries: readonly FeedEntry[],
+): CheckedFeed {
+  parsedOrigin(site.origin);
+  assertOwnedPath(feed.path);
+  assertOwnedPath(feed.homePath);
+  assertNonempty(feed.title, "Feed title");
+  assertNonempty(feed.description, "Feed description");
+  if (feed.rights !== undefined) assertNonempty(feed.rights, "Feed rights");
+  assertFeedParties(feed.authors, "Feed author");
+  if (feed.updated !== undefined) assertIsoDateTime(feed.updated, "Feed updated");
+  const seen = new Set<string>();
+  const checked = entries.map((entry): CheckedFeedEntry => {
+    assertOwnedPath(entry.path);
+    const url = absoluteWebUrl(site.origin, entry.path);
+    if (seen.has(url)) {
+      throw new RangeError(`Feed entries must be unique; received ${url} twice.`);
+    }
+    seen.add(url);
+    assertNonempty(entry.title, "Feed entry title");
+    assertIsoDateTime(entry.publishedTime, "Feed entry publishedTime");
+    if (entry.modifiedTime !== undefined) {
+      assertIsoDateTime(entry.modifiedTime, "Feed entry modifiedTime");
+      if (entry.modifiedTime < entry.publishedTime) {
+        throw new RangeError(
+          `Feed entry ${url} has a modifiedTime before its publishedTime.`,
+        );
+      }
+    }
+    if (entry.summary !== undefined) assertNonempty(entry.summary, "Feed entry summary");
+    if (entry.contentHtml !== undefined) {
+      assertNonempty(entry.contentHtml, "Feed entry contentHtml");
+    }
+    assertFeedParties(entry.authors, "Feed entry author");
+    const categories = new Set<string>();
+    entry.categories?.forEach((category) => {
+      assertNonempty(category, "Feed entry category");
+      if (categories.has(category)) {
+        throw new RangeError(`Feed entry ${url} lists category ${category} twice.`);
+      }
+      categories.add(category);
+    });
+    if (entry.enclosure !== undefined) {
+      assertRepresentativeImage(entry.enclosure.image);
+      if (!Number.isSafeInteger(entry.enclosure.length) || entry.enclosure.length < 0) {
+        throw new RangeError("Feed enclosure length must be a nonnegative safe integer.");
+      }
+    }
+    return { entry, updated: entry.modifiedTime ?? entry.publishedTime, url };
+  });
+  const newestEntry = newestTimestamp(checked.map((item) => item.updated));
+  if (
+    feed.updated !== undefined
+    && newestEntry !== undefined
+    && feed.updated < newestEntry
+  ) {
+    throw new RangeError("Feed updated cannot precede its newest entry.");
+  }
+  const updated = feed.updated ?? newestEntry;
+  if (updated === undefined) {
+    throw new RangeError("A feed without entries requires an explicit updated time.");
+  }
+  const ordered = [...checked].sort((left, right) => (
+    left.entry.publishedTime === right.entry.publishedTime
+      ? (left.url < right.url ? -1 : left.url > right.url ? 1 : 0)
+      : (left.entry.publishedTime < right.entry.publishedTime ? 1 : -1)
+  ));
+  return {
+    entries: ordered,
+    homeUrl: absoluteWebUrl(site.origin, feed.homePath),
+    selfUrl: absoluteWebUrl(site.origin, feed.path),
+    updated,
+  };
+}
+
+function atomAuthor(site: SearchSite, party: ArticleParty): string {
+  const uri = party.path === undefined
+    ? ""
+    : `<uri>${xmlText(absoluteWebUrl(site.origin, party.path), "Author URL")}</uri>`;
+  return `<author><name>${xmlText(party.name, "Author name")}</name>${uri}</author>`;
+}
+
+/**
+ * Builds an Atom 1.0 document (RFC 4287). Entries appear newest first by
+ * `publishedTime`, ties broken by URL. Every URL is absolute and derived from
+ * `site.origin`. Throws when a value cannot be written as XML 1.0, when an
+ * entry repeats, or when neither the feed nor an entry names an author.
+ */
+export function createAtomFeed(
+  site: SearchSite,
+  feed: FeedDiscovery,
+  entries: readonly FeedEntry[],
+): string {
+  const checked = checkFeed(site, feed, entries);
+  const feedHasAuthors = feed.authors !== undefined && feed.authors.length > 0;
+  const lines = [
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+    `<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="${xmlAttribute(site.language ?? "en-US", "Feed language")}">`,
+    `<id>${xmlText(checked.selfUrl, "Feed id")}</id>`,
+    `<title type="text">${xmlText(feed.title, "Feed title")}</title>`,
+    `<subtitle type="text">${xmlText(feed.description, "Feed description")}</subtitle>`,
+    `<updated>${checked.updated}</updated>`,
+    `<link rel="self" type="application/atom+xml" href="${xmlAttribute(checked.selfUrl, "Feed URL")}"/>`,
+    `<link rel="alternate" type="text/html" href="${xmlAttribute(checked.homeUrl, "Feed home URL")}"/>`,
+    ...(feed.authors ?? []).map((party) => atomAuthor(site, party)),
+    ...(feed.rights === undefined
+      ? []
+      : [`<rights type="text">${xmlText(feed.rights, "Feed rights")}</rights>`]),
+  ];
+  for (const { entry, updated, url } of checked.entries) {
+    const authors = entry.authors ?? [];
+    if (!feedHasAuthors && authors.length === 0) {
+      throw new RangeError(
+        `Atom entry ${url} needs an author because the feed names none.`,
+      );
+    }
+    const enclosure = entry.enclosure === undefined
+      ? []
+      : [
+        `<link rel="enclosure" type="${xmlAttribute(entry.enclosure.image.contentType, "Enclosure type")}" length="${String(entry.enclosure.length)}" href="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}"/>`,
+      ];
+    lines.push(
+      "<entry>",
+      `<id>${xmlText(url, "Entry id")}</id>`,
+      `<title type="text">${xmlText(entry.title, "Entry title")}</title>`,
+      `<link rel="alternate" type="text/html" href="${xmlAttribute(url, "Entry URL")}"/>`,
+      ...enclosure,
+      `<published>${entry.publishedTime}</published>`,
+      `<updated>${updated}</updated>`,
+      ...authors.map((party) => atomAuthor(site, party)),
+      ...(entry.categories ?? []).map((category) => (
+        `<category term="${xmlAttribute(category, "Entry category")}"/>`
+      )),
+      ...(entry.summary === undefined
+        ? []
+        : [`<summary type="text">${xmlText(entry.summary, "Entry summary")}</summary>`]),
+      ...(entry.contentHtml === undefined
+        ? []
+        : [`<content type="html">${xmlText(entry.contentHtml, "Entry content")}</content>`]),
+      "</entry>",
+    );
+  }
+  lines.push("</feed>");
+  return `${lines.join("\n")}\n`;
+}
+
+function rssDate(value: string): string {
+  return new Date(value).toUTCString();
+}
+
+/**
+ * Builds an RSS 2.0 document with `atom:link` self reference, `dc:creator`
+ * for authors, and `content:encoded` for full HTML. Items appear newest first
+ * by `publishedTime`, ties broken by URL. Entry authors fall back to feed
+ * authors. Dates use the RFC 822 form RSS requires.
+ */
+export function createRssFeed(
+  site: SearchSite,
+  feed: FeedDiscovery,
+  entries: readonly FeedEntry[],
+): string {
+  const checked = checkFeed(site, feed, entries);
+  const lines = [
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+    "<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">",
+    "<channel>",
+    `<title>${xmlText(feed.title, "Feed title")}</title>`,
+    `<link>${xmlText(checked.homeUrl, "Feed home URL")}</link>`,
+    `<description>${xmlText(feed.description, "Feed description")}</description>`,
+    `<language>${xmlText(site.language ?? "en-US", "Feed language")}</language>`,
+    `<lastBuildDate>${rssDate(checked.updated)}</lastBuildDate>`,
+    `<atom:link rel="self" type="application/rss+xml" href="${xmlAttribute(checked.selfUrl, "Feed URL")}"/>`,
+    ...(feed.rights === undefined
+      ? []
+      : [`<copyright>${xmlText(feed.rights, "Feed rights")}</copyright>`]),
+  ];
+  for (const { entry, url } of checked.entries) {
+    const authors = entry.authors ?? feed.authors ?? [];
+    const enclosure = entry.enclosure === undefined
+      ? []
+      : [
+        `<enclosure url="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}" length="${String(entry.enclosure.length)}" type="${xmlAttribute(entry.enclosure.image.contentType, "Enclosure type")}"/>`,
+      ];
+    lines.push(
+      "<item>",
+      `<title>${xmlText(entry.title, "Entry title")}</title>`,
+      `<link>${xmlText(url, "Entry URL")}</link>`,
+      `<guid isPermaLink="true">${xmlText(url, "Entry id")}</guid>`,
+      `<pubDate>${rssDate(entry.publishedTime)}</pubDate>`,
+      ...authors.map((party) => `<dc:creator>${xmlText(party.name, "Author name")}</dc:creator>`),
+      ...(entry.categories ?? []).map((category) => (
+        `<category>${xmlText(category, "Entry category")}</category>`
+      )),
+      ...(entry.summary === undefined
+        ? []
+        : [`<description>${xmlText(entry.summary, "Entry summary")}</description>`]),
+      ...(entry.contentHtml === undefined
+        ? []
+        : [`<content:encoded>${xmlText(entry.contentHtml, "Entry content")}</content:encoded>`]),
+      ...enclosure,
+      "</item>",
+    );
+  }
+  lines.push("</channel>", "</rss>");
+  return `${lines.join("\n")}\n`;
 }

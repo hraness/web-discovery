@@ -1,6 +1,6 @@
 # Web Discovery
 
-`@hraness/web-discovery` builds a Next.js site's metadata, `robots.txt`, sitemap, JSON-LD, web manifest, IndexNow payload, and social card from site and article records you define once. It rejects malformed origins, paths, and social-card colors before producing any output.
+`@hraness/web-discovery` builds a Next.js site's metadata, `robots.txt`, sitemap, JSON-LD, Atom and RSS feeds, web manifest, IndexNow payload, and social card from site and article records you define once. It rejects malformed origins, paths, and social-card colors before producing any output.
 
 The package turns your records into metadata. Your application still supplies every product fact, route, date, image, and visual decision.
 
@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.7.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.8.0"
   }
 }
 ```
@@ -125,6 +125,80 @@ Render that image and caption in the page's initial HTML. The social crop appear
 
 Keep asset hashes, prompts, generation records, and source records in your application's own registry. The package does not read or emit them.
 
+## Publish a blog index, feeds, and sitemap entries
+
+The same article records produce the blog's `Blog` schema, its sitemap entries, and Atom and RSS documents. Add `blogPath` to each article so its `BlogPosting` schema names the blog it belongs to:
+
+```ts
+import {
+  blogJsonLd,
+  createAtomFeed,
+  createBlogSitemapPaths,
+  createFeedEntry,
+  createRssFeed,
+  type ArticleDiscovery,
+  type FeedDiscovery,
+} from "@hraness/web-discovery";
+
+const post = {
+  authors: [{ kind: "Organization", name: "Example", path: "/" }],
+  blogPath: "/blog",
+  canonicalPath: "/blog/first-post",
+  description: "What the first post explains.",
+  image: {
+    alt: "A chart drawn from a small CSV file.",
+    contentType: "image/png",
+    height: 630,
+    path: "/blog/first-post.png",
+    width: 1200,
+  },
+  publishedTime: "2026-09-23T00:00:00.000Z",
+  publisher: { kind: "Organization", name: "Example", path: "/" },
+  title: "The first post",
+  type: "BlogPosting",
+} as const satisfies ArticleDiscovery;
+
+const feed = {
+  authors: [{ kind: "Organization", name: "Example", path: "/" }],
+  description: "Posts from Example.",
+  homePath: "/blog",
+  path: "/blog/feed.xml",
+  title: "Example blog",
+} as const satisfies FeedDiscovery;
+
+export const blogSchema = blogJsonLd(site, {
+  description: "Posts from Example.",
+  name: "Example blog",
+  path: "/blog",
+}, [post]);
+export const blogSitemapPaths = createBlogSitemapPaths({ path: "/blog" }, [post]);
+export const atom = createAtomFeed(site, feed, [
+  createFeedEntry(post, { contentHtml: "<p>The post body.</p>" }),
+]);
+export const rss = createRssFeed(site, feed, [createFeedEntry(post)]);
+```
+
+`articleJsonLd` then sets `isPartOf` to the `Blog` node at `https://example.com/blog#blog`, and each `blogPost` in `blogJsonLd` carries the same `@id` as the post's own schema. An article names either `blogPath` or the older `isPartOfPath`, not both, and `blogJsonLd` rejects a post whose `blogPath` names a different blog.
+
+`createBlogSitemapPaths` returns the index entry followed by one entry per article with its image and `lastModified` date (`modifiedTime`, or `publishedTime` when that is absent). The index is dated by its newest article unless you pass `lastModified`. Pass the result to `createSitemap`.
+
+The feed builders return a complete XML document as a string, so they work in a Next.js route handler, a static build script, or any other runtime. Serve them with `ATOM_FEED_CONTENT_TYPE` or `RSS_FEED_CONTENT_TYPE`, and advertise them with `createPublicSiteMetadata(site, { atomFeedPath, feedPath })`, where `feedPath` is the RSS path. Both documents:
+
+- use absolute URLs from `site.origin`, with the entry URL as the Atom `id` and the RSS `guid`
+- list entries newest first by `publishedTime`, whatever order you pass
+- date the feed by its newest entry (`modifiedTime`, or `publishedTime`) unless you pass `updated`
+- write `summary` as plain text and `contentHtml` as escaped HTML, which feed readers decode and render
+- add an image enclosure when you pass `imageLength`, the image file's size in bytes
+
+RSS writes authors as `dc:creator`, falls back to the feed's authors for entries without their own, and rounds dates to whole seconds because RSS dates carry no fractions. Atom requires an author on the feed or on every entry.
+
+The feed builders throw before producing any output when:
+
+- a value contains a character XML 1.0 cannot represent, such as a control character or an unpaired surrogate
+- two entries share a URL, or one entry repeats a category
+- a date is not a canonical UTC timestamp such as `2026-09-23T00:00:00.000Z`, `modifiedTime` precedes `publishedTime`, or `updated` precedes the newest entry
+- the feed has no entries and no `updated` time
+
 ## Render safe JSON-LD
 
 ```tsx
@@ -138,7 +212,7 @@ export function WebsiteSchema() {
 
 `JsonLdScript` escapes `<`, `>`, `&`, and Unicode line separators for an HTML script context. Emit schema only when the page visibly supports every claim it contains.
 
-Beyond `websiteJsonLd` and `articleJsonLd`, the root export carries `breadcrumbJsonLd`, `collectionPageJsonLd`, `creativeWorkJsonLd`, `musicAlbumJsonLd`, `profilePageJsonLd`, and `webApplicationJsonLd` for pages that visibly publish a trail, a curated list, a work, an album, a person's profile, or a web app. Each builder emits the facts you pass and adds no dates, authors, ratings, or reviews. `webApplicationJsonLd` also sets `operatingSystem` to `Any` and, when you pass `free: true`, adds a zero-price USD offer.
+Beyond `websiteJsonLd`, `articleJsonLd`, and `blogJsonLd`, the root export carries `breadcrumbJsonLd`, `collectionPageJsonLd`, `creativeWorkJsonLd`, `musicAlbumJsonLd`, `profilePageJsonLd`, and `webApplicationJsonLd` for pages that visibly publish a trail, a curated list, a work, an album, a person's profile, or a web app. Each builder emits the facts you pass and adds no dates, authors, ratings, or reviews. `webApplicationJsonLd` also sets `operatingSystem` to `Any` and, when you pass `free: true`, adds a zero-price USD offer.
 
 ## Generate a deterministic social card
 
@@ -195,7 +269,7 @@ Install `satori` and `@resvg/resvg-js` in your application; the package does not
 
 | Import | Use it for | Scope |
 | --- | --- | --- |
-| `@hraness/web-discovery` | URLs, public and private metadata and robots, sitemaps, manifests, IndexNow, JSON-LD builders, and feed images | Data builders with no product copy |
+| `@hraness/web-discovery` | URLs, public and private metadata and robots, sitemaps, manifests, IndexNow, JSON-LD builders, and Atom and RSS feeds | Data builders with no product copy |
 | `@hraness/web-discovery/json-ld` | One safely serialized React `<script type="application/ld+json">` | React rendering only |
 | `@hraness/web-discovery/social-image` | One deterministic Next.js `ImageResponse` | Next.js social-image rendering only |
 | `@hraness/web-discovery/social-image/card` | The same layout as a React element with fonts and dimensions | Next.js-free scripted rendering |
