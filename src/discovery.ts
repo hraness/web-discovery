@@ -1144,15 +1144,36 @@ export function createFeedEntry(
 // XML 1.0 characters: tab, line feed, carriage return, U+0020–U+D7FF,
 // U+E000–U+FFFD, and U+10000–U+10FFFF. Everything else, including lone
 // surrogates, cannot appear in a well-formed document even as a reference.
-const XML_INVALID_CHARACTER =
-  /[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/u;
+// This scans UTF-16 code units directly because a Unicode regular
+// expression class misses some lone surrogates in JavaScriptCore.
+function invalidXmlCodeUnit(value: string): number | undefined {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return unit;
+    }
+    if (
+      (unit >= 0xdc00 && unit <= 0xdfff)
+      || unit === 0xfffe
+      || unit === 0xffff
+      || (unit < 0x20 && unit !== 0x9 && unit !== 0xa && unit !== 0xd)
+    ) {
+      return unit;
+    }
+  }
+  return undefined;
+}
 
 function assertXmlCharacters(value: string, label: string): void {
-  const match = XML_INVALID_CHARACTER.exec(value);
-  if (match !== null) {
-    const code = match[0].codePointAt(0) ?? 0;
+  const unit = invalidXmlCodeUnit(value);
+  if (unit !== undefined) {
     throw new RangeError(
-      `${label} contains U+${code.toString(16).toUpperCase().padStart(4, "0")}, which XML 1.0 cannot represent.`,
+      `${label} contains U+${unit.toString(16).toUpperCase().padStart(4, "0")}, which XML 1.0 cannot represent.`,
     );
   }
 }

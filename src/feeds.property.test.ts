@@ -27,14 +27,25 @@ const site = {
   title: "Example",
 } as const satisfies SearchSite;
 
-const XML_VALID = /^[\t\n\r -퟿-�\u{10000}-\u{10FFFF}]*$/u;
+// Iterating a string yields code points, with each lone surrogate on its own.
+function isXmlText(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    const allowed = code === 0x9 || code === 0xa || code === 0xd
+      || (code >= 0x20 && code <= 0xd7ff)
+      || (code >= 0xe000 && code <= 0xfffd)
+      || (code >= 0x10000 && code <= 0x10ffff);
+    if (!allowed) return false;
+  }
+  return true;
+}
 
 // Every XML-representable string, biased toward markup, entity, quote,
 // whitespace, CDATA-terminator, and astral characters.
 const hostile = fc.oneof(
-  fc.constantFrom("&", "<", ">", "\"", "'", "]]>", "&amp;", "&#13;", "\r", "\n", "\t", "\r\n", " ", "😀", " ", "<![CDATA[", "-->"),
+  fc.constantFrom("&", "<", ">", "\"", "'", "]]>", "&amp;", "&#13;", "\r", "\n", "\t", "\r\n", " ", "😀", "\u2028", "<![CDATA[", "-->"),
   fc.string({ unit: "grapheme", maxLength: 4 }),
-  fc.string({ unit: "binary", maxLength: 4 }).filter((value) => XML_VALID.test(value)),
+  fc.string({ unit: "binary", maxLength: 4 }).filter(isXmlText),
 );
 const xmlString = fc.array(hostile, { maxLength: 12 }).map((parts) => parts.join(""));
 const nonempty = xmlString.filter((value) => value.trim().length > 0);
@@ -180,12 +191,22 @@ describe("feed laws", () => {
   });
 
   test("any value with a character outside XML 1.0 is rejected, never emitted", () => {
+    // Regression: U+F900 followed by a lone U+DC00 once slipped past a
+    // Unicode regular expression class in JavaScriptCore.
+    expect(() => createAtomFeed(site, {
+      authors: [{ kind: "Organization", name: "Example" }],
+      description: "d",
+      homePath: "/blog",
+      path: "/blog/feed.xml",
+      title: "\uF900\uDC00!",
+      updated: "2026-01-01T00:00:00.000Z",
+    }, [])).toThrow("U+DC00");
     const invalid = fc.oneof(
       fc.integer({ min: 0, max: 0x1f }).filter((code) => ![0x9, 0xa, 0xd].includes(code)),
       fc.integer({ min: 0xd800, max: 0xdfff }),
       fc.constantFrom(0xfffe, 0xffff),
     ).map((code) => String.fromCharCode(code));
-    fc.assert(fc.property(nonempty, invalid, nonempty, (before, bad, after) => {
+    fc.assert(fc.property(xmlString, invalid, xmlString, (before, bad, after) => {
       const title = `${before}${bad}${after}`;
       const entryValue: FeedEntry = {
         path: "/blog/a",
