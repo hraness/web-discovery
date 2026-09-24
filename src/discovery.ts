@@ -232,8 +232,19 @@ function assertPositiveInteger(value: number, label: string): void {
   }
 }
 
+const IMAGE_CONTENT_TYPES: ReadonlySet<string> = new Set<ImageContentType>([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
 function assertRepresentativeImage(image: RepresentativeImage): void {
   assertOwnedPath(image.path);
+  if (!IMAGE_CONTENT_TYPES.has(image.contentType)) {
+    throw new RangeError(
+      `Representative image contentType must be image/jpeg, image/png, or image/webp; received ${image.contentType}.`,
+    );
+  }
   assertNonempty(image.alt, "Representative image alt text");
   assertPositiveInteger(image.width, "Representative image width");
   assertPositiveInteger(image.height, "Representative image height");
@@ -1037,6 +1048,11 @@ export function blogJsonLd(
       ? {}
       : { publisher: partyJsonLd(site, blog.publisher, "Blog publisher") }),
     blogPost: articlePostUrls(site, articles, "Blog JSON-LD").map(([article, postUrl]) => {
+      if (article.blogPath !== undefined && article.blogPath !== blog.path) {
+        throw new RangeError(
+          `Blog JSON-LD lists ${postUrl}, whose blogPath names ${article.blogPath} instead of ${blog.path}.`,
+        );
+      }
       return {
         "@type": article.type,
         "@id": `${postUrl}#article`,
@@ -1338,7 +1354,7 @@ export function createAtomFeed(
     const enclosure = entry.enclosure === undefined
       ? []
       : [
-        `<link rel="enclosure" type="${entry.enclosure.image.contentType}" length="${String(entry.enclosure.length)}" href="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}"/>`,
+        `<link rel="enclosure" type="${xmlAttribute(entry.enclosure.image.contentType, "Enclosure type")}" length="${String(entry.enclosure.length)}" href="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}"/>`,
       ];
     lines.push(
       "<entry>",
@@ -1400,7 +1416,7 @@ export function createRssFeed(
     const enclosure = entry.enclosure === undefined
       ? []
       : [
-        `<enclosure url="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}" length="${String(entry.enclosure.length)}" type="${entry.enclosure.image.contentType}"/>`,
+        `<enclosure url="${xmlAttribute(absoluteWebUrl(site.origin, entry.enclosure.image.path), "Enclosure URL")}" length="${String(entry.enclosure.length)}" type="${xmlAttribute(entry.enclosure.image.contentType, "Enclosure type")}"/>`,
       ];
     lines.push(
       "<item>",

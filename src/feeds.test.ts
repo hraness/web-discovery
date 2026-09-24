@@ -141,6 +141,11 @@ describe("BlogPosting and Blog JSON-LD", () => {
       name: "n",
       path: "/blog",
     }, [first, first])).toThrow("twice");
+    expect(() => blogJsonLd(site, {
+      description: "d",
+      name: "n",
+      path: "/notes",
+    }, [first])).toThrow("instead of /notes");
   });
 });
 
@@ -337,6 +342,19 @@ describe("feed validation", () => {
         ...entries[1],
         enclosure: { image, length: -1 },
       }])).toThrow("nonnegative");
+    });
+  }
+
+  for (const [format, builder] of builders) {
+    test(`rejects an untyped image content type instead of writing it into an attribute (${format})`, () => {
+      const forged = JSON.parse(JSON.stringify({
+        ...image,
+        contentType: "image/png\" onload=\"x",
+      })) as typeof image;
+      expect(() => builder(site, feed, [{
+        ...entries[1],
+        enclosure: { image: forged, length: 1 },
+      }])).toThrow("contentType");
     });
   }
 
