@@ -468,6 +468,56 @@ describe("web discovery foundations", () => {
       path: "/fiction",
     })).not.toHaveProperty("author");
 
+    expect(creativeWorkJsonLd(site, {
+      author: {
+        kind: "Organization",
+        name: "Example Org",
+        url: "https://org.example",
+        sameAs: ["https://github.com/exampleorg", "https://www.npmjs.com/org/exampleorg"],
+      },
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toMatchObject({
+      author: {
+        "@type": "Organization",
+        name: "Example Org",
+        url: "https://org.example",
+        sameAs: ["https://github.com/exampleorg", "https://www.npmjs.com/org/exampleorg"],
+      },
+    });
+
+    expect(() => creativeWorkJsonLd(site, {
+      author: {
+        kind: "Organization",
+        name: "Example Org",
+        url: "http://org.example",
+      },
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toThrow("Creative work author url must be an absolute HTTPS URL");
+    expect(() => creativeWorkJsonLd(site, {
+      author: {
+        kind: "Organization",
+        name: "Example Org",
+        sameAs: [],
+      },
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toThrow("Creative work author sameAs cannot be an empty list");
+    expect(() => creativeWorkJsonLd(site, {
+      author: {
+        kind: "Organization",
+        name: "Example Org",
+        sameAs: ["not-a-url"],
+      },
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toThrow("Creative work author sameAs entry must be an absolute HTTPS URL");
+
     expect(musicAlbumJsonLd(site, {
       byArtist: { kind: "MusicGroup", name: "Example", path: "/example" },
       description: "Five tracks.",

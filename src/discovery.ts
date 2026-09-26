@@ -137,6 +137,8 @@ export type SchemaParty = Readonly<{
   kind: "MusicGroup" | "Organization" | "Person";
   name: string;
   path?: OwnedPath;
+  url?: string;
+  sameAs?: readonly string[];
 }>;
 
 export type CreativeWorkDiscovery = Readonly<{
@@ -264,6 +266,15 @@ function assertRepresentativeImage(image: RepresentativeImage): void {
 function assertSchemaParty(party: SchemaParty, label: string): void {
   assertNonempty(party.name, `${label} name`);
   if (party.path !== undefined) assertOwnedPath(party.path);
+  if (party.url !== undefined) assertHttpsUrl(party.url, `${label} url`);
+  if (party.sameAs !== undefined) {
+    if (party.sameAs.length === 0) {
+      throw new RangeError(`${label} sameAs cannot be an empty list.`);
+    }
+    for (const profile of party.sameAs) {
+      assertHttpsUrl(profile, `${label} sameAs entry`);
+    }
+  }
 }
 
 function assertHttpsUrl(value: string, label: string): void {
@@ -334,9 +345,12 @@ function partyJsonLd(site: SearchSite, party: SchemaParty, label: string) {
   return {
     "@type": party.kind,
     name: party.name,
-    ...(party.path === undefined
-      ? {}
-      : { url: absoluteWebUrl(site.origin, party.path) }),
+    ...(party.url !== undefined
+      ? { url: party.url }
+      : party.path === undefined
+        ? {}
+        : { url: absoluteWebUrl(site.origin, party.path) }),
+    ...(party.sameAs === undefined ? {} : { sameAs: [...party.sameAs] }),
   } as const;
 }
 
