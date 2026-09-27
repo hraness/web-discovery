@@ -251,6 +251,20 @@ describe("Atom feed", () => {
     })])).toThrow("needs an author");
     expect(() => createAtomFeed(site, anonymous, [entries[0]])).not.toThrow();
   });
+
+  test("writes an external party url as the author uri", () => {
+    const external = parseXmlStrict(createAtomFeed(site, {
+      ...feed,
+      authors: [{
+        kind: "Organization",
+        name: "Example Org",
+        sameAs: ["https://github.com/exampleorg"],
+        url: "https://org.example",
+      }],
+    }, entries));
+    const author = child(external, "author", ATOM_NS);
+    expect(child(author, "uri", ATOM_NS).text).toBe("https://org.example");
+  });
 });
 
 describe("RSS feed", () => {

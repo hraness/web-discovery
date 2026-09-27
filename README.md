@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.8.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.9.0"
   }
 }
 ```
@@ -208,6 +208,17 @@ import { JsonLdScript } from "@hraness/web-discovery/json-ld";
 export function WebsiteSchema() {
   return <JsonLdScript data={websiteJsonLd(site)} id="website-schema" />;
 }
+```
+
+A party (author, publisher, or artist) takes either a `path` on this site or an absolute HTTPS `url` for a party whose home is elsewhere, plus optional `sameAs` profile URLs:
+
+```ts
+const publisher = {
+  kind: "Organization",
+  name: "Example",
+  url: "https://example.org",
+  sameAs: ["https://github.com/example"],
+} as const;
 ```
 
 `JsonLdScript` escapes `<`, `>`, `&`, and Unicode line separators for an HTML script context. Emit schema only when the page visibly supports every claim it contains.
