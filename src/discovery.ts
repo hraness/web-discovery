@@ -83,10 +83,8 @@ export type RepresentativeImage = Readonly<{
   width: number;
 }>;
 
-export type ArticleParty = Readonly<{
+export type ArticleParty = SchemaParty & Readonly<{
   kind: "Organization" | "Person";
-  name: string;
-  path?: OwnedPath;
 }>;
 
 /**
@@ -136,8 +134,11 @@ export type CollectionPageDiscovery = Readonly<{
 export type SchemaParty = Readonly<{
   kind: "MusicGroup" | "Organization" | "Person";
   name: string;
+  /** A page on this site that represents the party. Mutually exclusive with `url`. */
   path?: OwnedPath;
+  /** An absolute HTTPS URL for a party whose canonical home is another site. */
   url?: string;
+  /** Absolute HTTPS profile URLs that identify the same party, such as a GitHub organization. */
   sameAs?: readonly string[];
 }>;
 
@@ -265,6 +266,9 @@ function assertRepresentativeImage(image: RepresentativeImage): void {
 
 function assertSchemaParty(party: SchemaParty, label: string): void {
   assertNonempty(party.name, `${label} name`);
+  if (party.path !== undefined && party.url !== undefined) {
+    throw new RangeError(`${label} takes either path or url, not both.`);
+  }
   if (party.path !== undefined) assertOwnedPath(party.path);
   if (party.url !== undefined) assertHttpsUrl(party.url, `${label} url`);
   if (party.sameAs !== undefined) {
@@ -1325,9 +1329,9 @@ function checkFeed(
 }
 
 function atomAuthor(site: SearchSite, party: ArticleParty): string {
-  const uri = party.path === undefined
-    ? ""
-    : `<uri>${xmlText(absoluteWebUrl(site.origin, party.path), "Author URL")}</uri>`;
+  const url = party.url
+    ?? (party.path === undefined ? undefined : absoluteWebUrl(site.origin, party.path));
+  const uri = url === undefined ? "" : `<uri>${xmlText(url, "Author URL")}</uri>`;
   return `<author><name>${xmlText(party.name, "Author name")}</name>${uri}</author>`;
 }
 

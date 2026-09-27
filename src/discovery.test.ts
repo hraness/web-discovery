@@ -517,6 +517,17 @@ describe("web discovery foundations", () => {
       name: "fiction",
       path: "/fiction",
     })).toThrow("Creative work author sameAs entry must be an absolute HTTPS URL");
+    expect(() => creativeWorkJsonLd(site, {
+      author: {
+        kind: "Organization",
+        name: "Example Org",
+        path: "/",
+        url: "https://org.example",
+      },
+      description: "A chronicle.",
+      name: "fiction",
+      path: "/fiction",
+    })).toThrow("Creative work author takes either path or url, not both.");
 
     expect(musicAlbumJsonLd(site, {
       byArtist: { kind: "MusicGroup", name: "Example", path: "/example" },
