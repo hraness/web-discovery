@@ -1,7 +1,7 @@
 {
   "name": "@hraness/web-discovery",
   "version": "0.9.0",
-  "description": "Validated Next.js metadata, crawler, sitemap, feed, JSON-LD, and social-image primitives.",
+  "description": "Build Next.js metadata, robots.txt, sitemaps, RSS and Atom feeds, JSON-LD, IndexNow payloads, and social cards from one validated site record.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
