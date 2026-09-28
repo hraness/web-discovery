@@ -6,7 +6,12 @@ import {
   CARD_WIDTH,
   createSocialImageCard,
 } from "./social-image-card.js";
-import type { SocialImageDetails } from "./social-image-card.js";
+import { socialImageSiteDetails } from "./social-image-card.js";
+import type {
+  SocialImageDetails,
+  SocialImagePage,
+  SocialImageSite,
+} from "./social-image-card.js";
 
 export const socialImageSize = LARGE_SOCIAL_IMAGE;
 export const socialImageContentType = "image/png";
@@ -19,16 +24,26 @@ export {
   BOTTOM_RULE_HEIGHT,
   createSocialImageCard,
   createSocialImageElement,
+  defineSocialImageSite,
+  parseSocialImageIcon,
   plainSocialImageTheme,
+  socialImageAlt,
+  socialImageContrastRatio,
   socialImageFonts,
   socialImageHeadline,
+  socialImageLayout,
   socialImageMarks,
+  socialImageSiteDetails,
 } from "./social-image-card.js";
 export type {
   SocialImageCard,
   SocialImageDetails,
   SocialImageFonts,
+  SocialImageIcon,
+  SocialImageLayout,
   SocialImageMark,
+  SocialImagePage,
+  SocialImageSite,
   SocialImageTheme,
 } from "./social-image-card.js";
 
@@ -47,4 +62,12 @@ export function createSocialImageResponse(
     height: options.height ?? CARD_HEIGHT,
     width: options.width ?? CARD_WIDTH,
   });
+}
+
+export function createSiteSocialImageResponse(
+  site: SocialImageSite,
+  page: SocialImagePage = {},
+  options: SocialImageOptions = {},
+): ImageResponse {
+  return createSocialImageResponse(socialImageSiteDetails(site, page), options);
 }
