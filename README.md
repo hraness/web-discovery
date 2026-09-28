@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.9.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.10.0"
   }
 }
 ```
@@ -245,9 +245,29 @@ export default function OpenGraphImage() {
 }
 ```
 
-The card shows the eyebrow (or the domain) at the top, a large headline, the description, and the domain at the bottom. The headline is `headline` when you pass it. Otherwise it is `title` with one trailing brand segment removed, such as ` | Example` or ` · example.com`, when that segment matches the eyebrow, the domain, or the domain without its last label (`example`), ignoring case. Other titles appear unchanged.
+The card comes in two layouts. The product layout puts a large icon tile on the left and, beside it, the name, a description of up to three lines, and the domain. The page layout puts a small lockup of the icon, the name, and the domain at the top, the eyebrow above a large headline, and the description beneath it. A card uses the page layout when you pass a `headline` that differs from `title`, and the product layout otherwise. Pass `layout: "product"` or `layout: "page"` to choose.
 
-The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application, and write your own card when it needs serif or monospace type.
+This is a visible change for cards that pass a page title such as `"How Example works | Example"` without a `headline`. Before v0.10.0 the card showed that title as a large headline. It now uses the product layout and shows the title, without its brand segment, in the name slot, in up to three lines at 48 pixels or larger, then ends it in an ellipsis. Pass `layout: "page"` to keep a headline-first card.
+
+The headline is `headline` when you pass it. Otherwise it is `title` with one trailing brand segment removed, such as ` | Example` or ` · example.com`, when that segment matches the eyebrow, the domain, or the domain without its last label (`example`), ignoring case. Other titles appear unchanged.
+
+Pass `icon` to show your product icon in the tile:
+
+```tsx
+createSocialImageResponse({
+  description: "Convert CSV files to charts in your browser.",
+  domain: "example.com",
+  icon: { kind: "mark", src: "data:image/svg+xml,..." },
+  theme: { accent: "#2474D4" },
+  title: "Example",
+});
+```
+
+`src` must be a `data:` URL holding an SVG or a base64 PNG. The card throws before rendering for any other value, including remote URLs and file paths. A `mark` icon is a one-colour glyph: the card paints it white on a tile of the theme accent, or a deep shade of the accent when white would be hard to read. An `app` icon is a finished app icon: the card shows its own colours in a rounded tile and never repaints it. Without `icon`, the tile shows your `mark` element in white, or the first letter of the title.
+
+Text is at least 30 pixels tall. Lines break at whole words, short words stay with the word after them, and text that would not fit ends in an ellipsis instead of being cut off. The card keeps your capitalization. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against the background.
+
+The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
 
 Static sites without a Next.js runtime import the same layout through `@hraness/web-discovery/social-image/card`, which carries no `next` import. `createSocialImageCard` returns the React element, its embedded fonts, and the card dimensions so a checked script can rasterize with `satori` and `@resvg/resvg-js`:
 
@@ -275,6 +295,54 @@ const png = new Resvg(svg).render().asPng();
 ```
 
 Install `satori` and `@resvg/resvg-js` in your application; the package does not depend on them.
+
+## Declare a site once and render every card from it
+
+Describe the site in one module, then render the home card and each page card from it:
+
+```ts
+// app/social.ts
+import { defineSocialImageSite } from "@hraness/web-discovery/social-image";
+
+export const socialSite = defineSocialImageSite({
+  description: "Convert CSV files to charts in your browser.",
+  domain: "example.com",
+  icon: { kind: "app", src: "data:image/png;base64,..." },
+  name: "Example",
+  theme: { accent: "#2474D4", background: "#F8F7F4", foreground: "#1C1A18", muted: "#5E5A55" },
+});
+```
+
+```ts
+// app/opengraph-image.tsx
+import {
+  createSiteSocialImageResponse,
+  socialImageAlt,
+  socialImageContentType,
+  socialImageSize,
+} from "@hraness/web-discovery/social-image";
+import { socialSite } from "./social";
+
+export const alt = socialImageAlt(socialSite);
+export const contentType = socialImageContentType;
+export const size = socialImageSize;
+
+export default function Image() {
+  return createSiteSocialImageResponse(socialSite);
+}
+```
+
+A blog post or profile page passes its own copy, which switches the card to the page layout:
+
+```ts
+createSiteSocialImageResponse(socialSite, {
+  description: post.summary,
+  eyebrow: "Blog",
+  headline: post.title,
+});
+```
+
+`defineSocialImageSite` checks the name, domain, description, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
 ## Pick an import
 
@@ -314,9 +382,9 @@ It validates the record's shape and emits what you pass. Your page must show the
 
 No. Paths are canonical root-relative paths such as `/guide`. The builders reject queries, fragments, foreign origins, protocol-relative URLs, and spellings that URL parsing would normalize.
 
-### Does every site need the shared social-card typography?
+### Can a site draw its own social card?
 
-No. The shared renderer draws sans-serif cards. Write your own renderer when a product's typography or layout is part of its identity.
+Use the shared card. Every Hraness site renders its social images through this package, so the layout, type, and contrast rules stay the same everywhere and improve for every site at once. A site supplies its name, description, domain, icon, and theme colors, and nothing else.
 
 ## Contribute
 

@@ -25,6 +25,7 @@
 - Emit only schema that represents visible page content. Do not invent ratings, reviews, prices, authorship, dates, or other unsupported facts.
 - Keep social cards deterministic, readable, and free of remote assets or runtime filesystem dependencies. Load the official Nebula Sans Book and Bold payloads only through the reviewed generated Design Kit export.
 - Preserve the root, `./json-ld`, and `./social-image` export contracts. Keep React and Next.js as peers. The only runtime dependency is the exact immutable Design Kit release that supplies the social-image font payloads; do not add product dependencies.
+- This package owns the one social-card design for every Hraness site. Sites declare identity once with `defineSocialImageSite` (name, description, domain, icon, theme) and render every card through it; never add a per-site layout option. Design changes land here, render the private review gallery at every layout, theme and icon kind, and keep text at 30 px or larger.
 - Use Bun 1.3.14 for installs, builds, and tests. Verify every packed runtime export with genuine Node 24 and a real Next.js production build.
 - Keep mandatory rules in the closest `AGENTS.md`, executable contracts in types and tests, and pull-based rationale, evidence, synthesis, and plans in `kb/`.
 - Run `bun run check` before handoff. Run `bun run kb:refresh`, review the bounded findings, and finish with `bun run kb:check` after material KB edits.
