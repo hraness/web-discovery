@@ -1,4 +1,4 @@
-# Web Discovery
+# @hraness/web-discovery
 
 `@hraness/web-discovery` builds a Next.js site's metadata, `robots.txt`, sitemap, JSON-LD, Atom and RSS feeds, web manifest, IndexNow payload, and social card from site and article records you define once. It rejects malformed origins, paths, and social-card colors before producing any output.
 
@@ -298,6 +298,10 @@ bun run check
 
 ## Questions
 
+### Why not use the Next.js metadata files directly?
+
+For one simple site, use them. Next.js builds `robots.txt`, the sitemap, the manifest, and Open Graph images from files such as `app/robots.ts` and `app/sitemap.ts`, and [schema-dts](https://github.com/google/schema-dts) types JSON-LD. This package feeds those routes from one validated site record, rejects malformed origins, paths, and card colors before producing output, and adds RSS and Atom feeds and an IndexNow payload, which Next.js does not build. [next-sitemap](https://github.com/iamvishnusankar/next-sitemap) writes sitemaps after the build, and [next-seo](https://github.com/garmeeh/next-seo) renders tags and JSON-LD from components. Checked on 2026-09-28.
+
 ### Can `robots.txt` make a page private?
 
 No. Use authentication and authorization in the application. The private builders ask search engines not to crawl or index the site; they do not stop anyone from opening it.
@@ -323,3 +327,5 @@ Report suspected vulnerabilities privately as described in [SECURITY.md](./SECUR
 ## License
 
 MIT
+
+Maintained by [Hraness](https://hraness.com).
