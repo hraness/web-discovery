@@ -59,7 +59,10 @@ class Bits {
   private bit = 0;
   private held = 0;
   position = 0;
-  constructor(private readonly data: Uint8Array) {}
+  private readonly data: Uint8Array;
+  constructor(data: Uint8Array) {
+    this.data = data;
+  }
   read(count: number): number {
     while (this.held < count) {
       if (this.position >= this.data.length) throw new RangeError("inflate: out of data");

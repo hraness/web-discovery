@@ -213,6 +213,7 @@ try {
     lib: ["ES2024", "DOM", "DOM.Iterable"],
     jsx: "react-jsx",
     strict: true,
+    erasableSyntaxOnly: true,
     noEmit: true,
     skipLibCheck: true,
     types: ["node"],
