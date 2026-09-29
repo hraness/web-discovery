@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
 import { describe, expect, mock, test } from "bun:test";
 import fc from "fast-check";
 import type { ReactElement } from "react";
@@ -49,7 +50,9 @@ const {
   plainSocialImageTheme,
   socialImageAlt,
   socialImageContrastRatio,
+  socialImageFit,
   socialImageHeadline,
+  socialImageIconShape,
   socialImageLayout,
   socialImageMarks,
   socialImageSiteDetails,
@@ -552,8 +555,250 @@ describe("site social image template", () => {
         expect(details.title).toBe(site.name);
         expect(details.domain).toBe(site.domain);
         expect(details.icon).toEqual(site.icon);
-        expect(details.description).toBe(page.description ?? site.description);
+        // A page card never borrows the site tagline; the product card keeps it.
+        const pageCard = page.headline !== undefined && page.headline !== site.name;
+        expect(details.description).toBe(page.description ?? (pageCard ? "" : site.description));
       },
     ));
+  });
+});
+
+
+/** Encodes an RGBA PNG whose pixel at (x, y) is opaque when `paint` says so. */
+function pngDataUrl(size: number, paint: (x: number, y: number) => boolean, rgb = [0xB4, 0x3A, 0x1D]): string {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes: Uint8Array) => {
+    let c = 0xFFFFFFFF;
+    for (const byte of bytes) c = (crcTable[(c ^ byte) & 0xFF] ?? 0) ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  };
+  const chunk = (type: string, data: Uint8Array) => {
+    const body = new Uint8Array(4 + data.length);
+    body.set(new TextEncoder().encode(type));
+    body.set(data, 4);
+    const out = new Uint8Array(12 + data.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, data.length);
+    out.set(body, 4);
+    view.setUint32(8 + data.length, crc(body));
+    return out;
+  };
+  const header = new Uint8Array(13);
+  const headerView = new DataView(header.buffer);
+  headerView.setUint32(0, size);
+  headerView.setUint32(4, size);
+  header.set([8, 6, 0, 0, 0], 8);
+  const raw = new Uint8Array(size * (size * 4 + 1));
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (!paint(x, y)) continue;
+      raw.set([...rgb, 255], y * (size * 4 + 1) + 1 + x * 4);
+    }
+  }
+  const parts = [
+    new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    chunk("IHDR", header),
+    chunk("IDAT", new Uint8Array(deflateSync(raw))),
+    chunk("IEND", new Uint8Array()),
+  ];
+  return `data:image/png;base64,${Buffer.concat(parts).toString("base64")}`;
+}
+
+const svgUrl = (body: string, viewBox = "0 0 24 24") => `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='${viewBox}'>${body}</svg>`,
+)}`;
+
+describe("v0.11 card copy and art rules", () => {
+  const base = { domain: "example.com", title: "Example" } as const;
+  const pageCopy = (headline: string, description: string, eyebrow?: string) => ({
+    ...base,
+    description,
+    ...(eyebrow === undefined ? {} : { eyebrow }),
+    headline,
+    layout: "page" as const,
+  });
+  const bindingWords = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "is", "of", "on", "or", "the", "to", "with"]);
+  const lastWord = (lines: readonly string[]) => (lines.at(-1) ?? "").replace(/[^A-Za-z ]/gu, "").trim().split(" ").at(-1)?.toLowerCase() ?? "";
+
+  test("shortens a long description at a sentence or clause, never mid-sentence", () => {
+    const fit = socialImageFit(pageCopy(
+      "Query the derived graph",
+      "Run a derived-graph query against the knowledge base to find every decision that touches a file, and the reviews, owners, and tests that depend on it across every repository.",
+    ));
+    expect(fit.description?.cut).toBe("clause");
+    expect(fit.description?.lines.join(" ")).toBe("Run a derived-graph query against the knowledge base to find every decision that touches a file.");
+    expect(fit.issues.some((issue) => issue.includes("shortened"))).toBe(true);
+
+    // A comma inside a list is not a clause end.
+    const list = socialImageFit(pageCopy(
+      "Benchmark results",
+      "Every memory benchmark result Oh has published, with the score, setup, and main limit for each study and a link to its full record.",
+    ));
+    expect(list.description?.lines.join(" ")).toBe("Every memory benchmark result Oh has published.");
+
+    const word = fc.stringMatching(/^[a-z]{2,9}$/u);
+    const clause = fc.array(word, { minLength: 3, maxLength: 9 }).map((words) => words.join(" "));
+    const text = fc.array(clause, { minLength: 1, maxLength: 6 }).map((clauses) => `${clauses.map((part, index) =>
+      index === 0 ? `${part.slice(0, 1).toUpperCase()}${part.slice(1)}` : part).join(", ")}.`);
+    fc.assert(fc.property(text, (description) => {
+      const result = socialImageFit(pageCopy("A walk through the vault", description));
+      const shown = result.description?.lines ?? [];
+      if (result.description?.cut === "ellipsis") return;
+      expect(shown.join(" ")).not.toContain("…");
+      expect(bindingWords.has(lastWord(shown))).toBe(false);
+      expect(shown.join(" ").endsWith(".")).toBe(true);
+    }), { numRuns: 60 });
+  });
+
+  test("keeps the ellipsis as a last resort and reports it", () => {
+    const fit = socialImageFit(pageCopy("A walk through the vault", "Oneverylongrunonsentencewithoutanybreak ".repeat(12).trim()));
+    expect(fit.description?.cut).toBe("ellipsis");
+    expect(fit.issues).toContain("description does not fit and was clamped with an ellipsis");
+  });
+
+  test("throws in strict mode when copy does not fit as written", () => {
+    const long = pageCopy("Query the derived graph", "Run a derived-graph query against the knowledge base to find every decision that touches a file, and the reviews that depend on it everywhere.");
+    expect(() => createSocialImageCard({ ...long, strict: true })).toThrow("does not fit as written");
+    expect(() => createSocialImageCard({ ...pageCopy("Query the derived graph", "Find every decision behind a file."), strict: true })).not.toThrow();
+  });
+
+  test("leaves a page card without a description empty, but keeps the tagline on the home card", () => {
+    const site = defineSocialImageSite({ description: "Compacts long agent sessions", domain: "example.com", name: "Example" });
+    expect(socialImageSiteDetails(site, { headline: "Set up Example" }).description).toBe("");
+    expect(socialImageSiteDetails(site).description).toBe("Compacts long agent sessions");
+    expect(socialImageFit(socialImageSiteDetails(site, { headline: "Set up Example" })).description).toBeUndefined();
+    const text = renderedText(createSocialImageCard(socialImageSiteDetails(site, { headline: "Set up Example" })).element).join(" ");
+    expect(text).not.toContain("Compacts long agent sessions");
+    expect(socialImageFit(socialImageSiteDetails(site)).description?.lines.join(" ")).toBe("Compacts long agent sessions");
+  });
+
+  test("drops an eyebrow that the headline already opens with", () => {
+    expect(socialImageFit(pageCopy("Introducing Gobstopper", "", "Introducing")).eyebrow).toBeUndefined();
+    expect(socialImageFit(pageCopy("introducing gobstopper", "", "INTRODUCING")).eyebrow).toBeUndefined();
+    expect(socialImageFit(pageCopy("Documentation for the vault", "", "Docs")).eyebrow).toBeUndefined();
+    expect(socialImageFit(pageCopy("Benchmark results", "", "Benchmarks")).eyebrow).toBeUndefined();
+    // Word boundary: "Gob" does not repeat "Gobstopper".
+    expect(socialImageFit(pageCopy("Gobstopper internals", "", "Gob")).eyebrow).toBe("Gob");
+    expect(socialImageFit(pageCopy("How compaction works", "", "Blog")).eyebrow).toBe("Blog");
+    const word = fc.stringMatching(/^[A-Z][a-z]{3,10}$/u);
+    fc.assert(fc.property(word, word, (first, rest) => {
+      expect(socialImageFit(pageCopy(`${first} ${rest}`, "", first.toLowerCase())).eyebrow).toBeUndefined();
+    }), { numRuns: 40 });
+  });
+
+  test("sets one- and two-line page headlines at one size and flags the rest", () => {
+    const word = fc.stringMatching(/^[A-Za-z][a-z]{2,10}$/u);
+    const headline = fc.array(word, { minLength: 1, maxLength: 12 }).map((words) => words.join(" "));
+    fc.assert(fc.property(headline, (text) => {
+      const fit = socialImageFit(pageCopy(text, ""));
+      if (!fit.headline.reduced) expect(fit.headline.size).toBe(80);
+      expect(fit.headline.lines.length <= 2 || fit.headline.reduced).toBe(true);
+      expect(fit.headline.threeLine).toBe(fit.headline.lines.length === 3);
+      if (fit.headline.threeLine && !fit.headline.truncated) {
+        expect(fit.issues.some((issue) => issue.includes("three lines"))).toBe(true);
+      }
+    }), { numRuns: 30 });
+    // No lone word before a longer line when the headline fits on one line.
+    expect(socialImageFit(pageCopy("Query the derived graph", "")).headline.lines).toEqual(["Query the derived graph"]);
+    const long = socialImageFit(pageCopy("How the SlopTrade governor refuses an order that would breach the drawdown floor during a volatile open", ""));
+    expect(long.headline.threeLine).toBe(true);
+    expect(long.headline.truncated).toBe(false);
+    expect(long.headline.size).toBeGreaterThanOrEqual(30);
+  });
+
+  test("tints the page wash from each site's brand color", () => {
+    const paper = { background: "#FFF8E7", foreground: "#1F1B16", muted: "#5F564B" };
+    const red = socialImagePalette({ ...paper, accent: "#B43A1D" });
+    const blue = socialImagePalette({ ...paper, accent: "#2457A6" });
+    expect(red.backgroundTint).not.toBe(blue.backgroundTint);
+    expect(red.wash).toBe("#B43A1D");
+    // An explicit wash wins, and an app icon's color is used when there is none.
+    expect(socialImagePalette({ ...paper, accent: "#2457A6", wash: "#176B5B" }).wash).toBe("#176B5B");
+    expect(socialImagePalette({ ...paper, accent: "#2457A6" }, "#176B5B").wash).toBe("#176B5B");
+    fc.assert(fc.property(hex, hex, hex, hex, hex, (accent, background, foreground, muted, wash) => {
+      const palette = socialImagePalette({ accent, background, foreground, muted, wash });
+      for (const surface of palette.surfaces) {
+        expect(socialImageContrastRatio(palette.foreground, surface)).toBeGreaterThanOrEqual(7);
+        expect(socialImageContrastRatio(palette.primaryText, surface)).toBeGreaterThanOrEqual(4.5);
+      }
+    }), { numRuns: 200 });
+  });
+
+  test("measures how app art sits in its tile", () => {
+    const square = pngDataUrl(32, () => true);
+    const disc = pngDataUrl(32, (x, y) => (x - 15.5) ** 2 + (y - 15.5) ** 2 <= 15.5 ** 2);
+    const ring = pngDataUrl(32, (x, y) => {
+      const distance = Math.hypot(x - 15.5, y - 15.5);
+      return distance <= 15 && distance >= 11;
+    });
+    expect(socialImageIconShape({ kind: "app", src: square })).toBe("square");
+    expect(socialImageIconShape({ kind: "app", src: disc })).toBe("solid");
+    expect(socialImageIconShape({ kind: "app", src: ring })).toBe("open");
+    expect(socialImageIconShape({ kind: "app", src: svgUrl("<circle cx='12' cy='12' r='12' fill='#b43a1d'/><circle cx='8' cy='13' r='3' fill='#fff'/>") })).toBe("solid");
+    expect(socialImageIconShape({ kind: "app", src: svgUrl("<rect width='24' height='24' fill='#2474d4'/>") })).toBe("square");
+    expect(socialImageIconShape({ kind: "app", src: svgUrl("<circle cx='12' cy='12' r='9' fill='none' stroke='#000'/>") })).toBe("open");
+    expect(socialImageIconShape({ kind: "mark", src: svgMark })).toBe("open");
+  });
+
+  test("draws solid app art without a tile rim, and marks in the 60% safe area", () => {
+    const imgs = (node: unknown): { height: number; width: number }[] => {
+      if (Array.isArray(node)) return node.flatMap(imgs);
+      if (!isNode(node)) return [];
+      const props = node.props as { children?: unknown; height?: number; src?: string; width?: number };
+      const own = typeof props.src === "string" && typeof props.width === "number" && typeof props.height === "number"
+        ? [{ height: props.height, width: props.width }]
+        : [];
+      return [...own, ...imgs(props.children)];
+    };
+    const disc = svgUrl("<circle cx='12' cy='12' r='12' fill='#b43a1d'/>");
+    const product = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "app", src: disc } });
+    // The disc is drawn at the full 304px tile size.
+    expect(imgs(product.element).some((image) => image.width === 304 && image.height === 304)).toBe(true);
+    const mark = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "mark", src: svgMark } });
+    expect(imgs(mark.element).some((image) => Math.max(image.width, image.height) === Math.round(304 * 0.6))).toBe(true);
+  });
+
+  test("drops emoji and characters the fonts cannot draw, deterministically", () => {
+    const details = pageCopy("Ley 60 en Puerto Rico 🌴 税金 guide", "Guía en español 🇵🇷 con fuentes oficiales 🚀.", "Guía ✨");
+    const first = socialImageFit(details);
+    expect(first.headline.lines.join(" ")).toBe("Ley 60 en Puerto Rico guide");
+    expect(first.eyebrow).toBe("Guía");
+    expect(first.description?.lines.join(" ")).toBe("Guía en español con fuentes oficiales.");
+    expect(first.removed.map((removal) => removal.reason)).toEqual(["unsupported", "unsupported", "unsupported"]);
+    expect(socialImageFit(details)).toEqual(first);
+    const fonts = createSocialImageCard(details).fonts;
+    const drawable = fc.string({ unit: "binary", maxLength: 40 });
+    fc.assert(fc.property(drawable, (headline) => {
+      const card = createSocialImageCard({ ...pageCopy(`Guide ${headline}`, "")});
+      const text = renderedText(card.element).join("");
+      for (const character of text) {
+        const code = character.codePointAt(0) ?? 0;
+        if (code <= 0x20) continue;
+        expect(fonts.length).toBeGreaterThan(0);
+        expect(/\p{Extended_Pictographic}|\p{Script=Han}/u.test(character)).toBe(false);
+      }
+    }), { numRuns: 60 });
+  });
+
+  test("strips bracketed placeholders and treats a placeholder-only field as empty", () => {
+    const fit = socialImageFit(pageCopy("[DRAFT] Report pipeline internals", "[TODO] Short description of the report pipeline.", "[WIP]"));
+    expect(fit.headline.lines.join(" ")).toBe("Report pipeline internals");
+    expect(fit.description?.lines.join(" ")).toBe("Short description of the report pipeline.");
+    expect(fit.eyebrow).toBeUndefined();
+    expect(fit.removed.filter((removal) => removal.reason === "placeholder").map((removal) => removal.text).sort())
+      .toEqual(["[DRAFT]", "[TODO]", "[WIP]"]);
+    const empty = socialImageFit(pageCopy("[DRAFT]", "[untitled]"));
+    expect(empty.headline.lines.join(" ")).toBe("Example");
+    expect(empty.description).toBeUndefined();
+    expect(() => createSocialImageCard({ ...pageCopy("[wip] Notes", ""), strict: true })).toThrow("placeholder");
+    fc.assert(fc.property(fc.constantFrom("[DRAFT]", "[ draft ]", "[untitled]", "[WIP]", "[TBD]"), fc.stringMatching(/^[A-Z][a-z]{3,9}( [a-z]{3,9}){0,4}$/u), (tag, text) => {
+      const result = socialImageFit(pageCopy(`${tag} ${text}`, `${text} ${tag}`, tag));
+      expect(result.headline.lines.join(" ")).toBe(text);
+      expect(result.eyebrow).toBeUndefined();
+    }), { numRuns: 40 });
   });
 });

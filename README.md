@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.10.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.11.0"
   }
 }
 ```
@@ -263,9 +263,32 @@ createSocialImageResponse({
 });
 ```
 
-`src` must be a `data:` URL holding an SVG or a base64 PNG. The card throws before rendering for any other value, including remote URLs and file paths. A `mark` icon is a one-colour glyph: the card paints it white on a tile of the theme accent, or a deep shade of the accent when white would be hard to read. An `app` icon is a finished app icon: the card shows its own colours in a rounded tile and never repaints it. Without `icon`, the tile shows your `mark` element in white, or the first letter of the title.
+`src` must be a `data:` URL holding an SVG or a base64 PNG. The card throws before rendering for any other value, including remote URLs and file paths. Without `icon`, the tile shows your `mark` element in white, or the first letter of the title.
 
-Text is at least 30 pixels tall. Lines break at whole words, short words stay with the word after them, and text that would not fit ends in an ellipsis instead of being cut off. The card keeps your capitalization. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against the background.
+Every icon sits in the tile by one rule:
+
+- A `mark` icon is a one-colour glyph. The card trims its empty margin, scales it to 60% of the tile (`SOCIAL_IMAGE_GLYPH_SHARE`), centers it, and paints it white on a tile of the theme accent, or a deep shade of the accent when white would be hard to read.
+- An `app` icon is finished art that the card never repaints. A solid shape such as a disc is trimmed to its own edge and drawn at full tile size with no tile behind it, so no rim shows. Square art that fills its canvas is clipped to the rounded tile. Other art is trimmed and set in the same 60% safe area on a white tile, or a dark tile on dark themes.
+
+`socialImageIconShape(icon)` returns `"square"`, `"solid"`, or `"open"`, so a site can check which case its icon falls into.
+
+Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on a line, and a two-word name such as "Puerto Rico" is kept together even when that costs a short last line.
+
+- **Headline.** A page headline is set at 80 pixels on one or two lines. Only a headline that cannot fit two lines at 80 pixels is set smaller, at the largest of 62 to 46 pixels where it fits in up to three lines.
+- **Description.** A description that does not fit ends at its last whole sentence or clause that does, never on a word such as "and". The card ends it with an ellipsis only when no clause fits.
+- **Eyebrow.** The card drops the eyebrow when the headline already opens with it, ignoring case: "Introducing" over "Introducing Example", or "Docs" over "Documentation".
+- **Placeholders.** Bracketed placeholders such as `[DRAFT]`, `[WIP]`, `[TODO]`, and `[untitled]` are removed. A field that holds only a placeholder counts as empty.
+- **Unsupported characters.** Emoji, CJK, and any other character the embedded fonts cannot draw are removed, so the card never shows an empty box and never fetches a fallback font.
+
+To check that copy fits as written, call `socialImageFit(details)`. It lays out the card without rendering it and returns the lines drawn, whether the description was shortened (`description.cut`), whether the headline was set smaller or needs three lines (`headline.reduced`, `headline.threeLine`), what was removed, and a list of `issues`. Assert `issues` is empty in a test, or pass `strict: true` to make the card throw instead:
+
+```ts
+import { socialImageFit, socialImageSiteDetails } from "@hraness/web-discovery/social-image/card";
+
+expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual([]);
+```
+
+The background runs from the theme background to a pale wash of the brand color, so two sites that share a background token still look different. The wash is `theme.wash` when you pass it, else the main color of an `app` icon, else the accent. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against every part of the background.
 
 The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
 
@@ -341,6 +364,10 @@ createSiteSocialImageResponse(socialSite, {
   headline: post.title,
 });
 ```
+
+A page card without a `description` shows no description. It does not repeat the site tagline, which appears only on the home card.
+
+v0.11.0 changes how existing cards look, with no API change: descriptions end at a clause instead of an ellipsis, page cards without a description no longer show the tagline, duplicate eyebrows, placeholders, and unsupported characters are removed, headlines keep one size for one or two lines, the background wash follows each site's brand color, and icons sit in the safe area above. The new exports are `socialImageFit`, `socialImageIconShape`, and `SOCIAL_IMAGE_GLYPH_SHARE`, plus the optional `strict` and `theme.wash` fields.
 
 `defineSocialImageSite` checks the name, domain, description, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
