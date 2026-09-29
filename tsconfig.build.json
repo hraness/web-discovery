@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": [
+      "node"
+    ],
+    "declarationMap": true
+  },
+  "include": [],
+  "files": [
+    "src/index.ts",
+    "src/json-ld.tsx",
+    "src/social-image.tsx",
+    "src/social-image-card.tsx"
+  ]
+}

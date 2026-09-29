@@ -22,6 +22,8 @@ bun install
 
 The package supports Next.js 16.2 through 16.x, React 19, and Node.js 20.9 or newer.
 
+Next.js is an optional peer. Only `./social-image` needs it at runtime; the other exports work in any React or Node application.
+
 ## Describe a site once for search, social, sitemaps, and structured data
 
 Define the site once, then pass that record to the Next.js metadata routes and the JSON-LD builder:

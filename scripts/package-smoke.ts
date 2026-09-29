@@ -20,6 +20,15 @@ const verificationPackages = [
   "typescript@^6.0.3",
 ];
 
+const plainImportSpecifiers = [packageName, `${packageName}/social-image/card`];
+const plainConsumerPackages = [
+  "@types/node@^24.10.0",
+  "@types/react@^19.2.14",
+  "react@19.2.3",
+  "react-dom@19.2.3",
+  "typescript@^6.0.3",
+];
+
 const repository = process.cwd();
 const work = await mkdtemp(join(repository, ".package-smoke-"));
 const cache = join(work, "cache");
@@ -274,6 +283,59 @@ try {
     join(consumer, "node_modules", "next", "dist", "bin", "next"),
     "build",
   ], consumer);
+
+  // Non-Next consumers (Bun-built sites, scripts) must not pay for the
+  // optional `next` peer, and must still typecheck the root and card exports.
+  const plainConsumer = join(work, "plain-consumer");
+  await mkdir(plainConsumer);
+  await writeFile(
+    join(plainConsumer, "package.json"),
+    JSON.stringify({ private: true, type: "module" }),
+  );
+  await run([
+    process.execPath,
+    "add",
+    archive,
+    ...plainConsumerPackages,
+    "--ignore-scripts",
+  ], plainConsumer);
+  if (await Bun.file(join(plainConsumer, "node_modules", "next", "package.json")).exists()) {
+    throw new Error("installing without next must not install the optional next peer");
+  }
+  await run([
+    nodeExecutable,
+    "--input-type=module",
+    "-e",
+    `await Promise.all(${JSON.stringify(plainImportSpecifiers)}.map((specifier) => import(specifier)))`,
+  ], plainConsumer);
+  await writeFile(
+    join(plainConsumer, "index.ts"),
+    [
+      'import { createPublicRobots, createPublicSiteMetadata, createSitemap, parseOwnedPath, websiteJsonLd, type SearchSite } from "@hraness/web-discovery";',
+      'import { createSocialImageCard, defineSocialImageSite, type SocialImageDetails } from "@hraness/web-discovery/social-image/card";',
+      'const site = { description: "Example", name: "Example", origin: "https://example.com", title: "Example" } as const satisfies SearchSite;',
+      "const metadata = createPublicSiteMetadata(site);",
+      "const robots = createPublicRobots(site.origin);",
+      'const sitemap = createSitemap(site.origin, [{ path: parseOwnedPath("/") }]);',
+      "const schema = websiteJsonLd(site);",
+      'const cardDetails = { description: "Example", domain: "example.com", title: "Example" } as const satisfies SocialImageDetails;',
+      "const card = createSocialImageCard(cardDetails);",
+      "void [metadata, robots, sitemap, schema, card, defineSocialImageSite];",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(plainConsumer, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        ...sharedCompilerOptions,
+        module: "Preserve",
+        moduleResolution: "Bundler",
+      },
+      include: ["index.ts"],
+    }, null, 2),
+  );
+  await run([process.execPath, "x", "tsc", "-p", "./tsconfig.json"], plainConsumer);
 } finally {
   await rm(work, { force: true, recursive: true });
 }
