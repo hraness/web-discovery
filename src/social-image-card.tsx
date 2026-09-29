@@ -2,6 +2,9 @@ import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/soc
 import { cloneElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 
+import { pngCoverage } from "./social-image-raster.js";
+import type { RasterCoverage } from "./social-image-raster.js";
+
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 export const CARD_PADDING = 60;
@@ -23,6 +26,12 @@ export type SocialImageTheme = Readonly<{
   background: string;
   foreground: string;
   muted: string;
+  /**
+   * The brand color the background wash is tinted toward. Defaults to the
+   * main color of an `app` icon, else `accent`, so two sites that share a
+   * background token still get cards of their own.
+   */
+  wash?: string;
 }>;
 
 export const plainSocialImageTheme = {
@@ -62,6 +71,14 @@ export type SocialImageDetails = Readonly<{
    */
   layout?: SocialImageLayout;
   mark?: ReactNode;
+  /**
+   * Throw instead of adapting when the copy does not fit as written: a
+   * description that has to be shortened, a three-line headline, characters
+   * the embedded fonts cannot draw, or a bracketed placeholder such as
+   * "[DRAFT]". Use it in tests and builds; `socialImageFit` reports the same
+   * findings without throwing.
+   */
+  strict?: boolean;
   theme?: Partial<SocialImageTheme>;
   title: string;
 }>;
@@ -154,7 +171,7 @@ function readable(
 export type SocialImagePalette = Readonly<{
   /** Base of the background gradient. */
   background: string;
-  /** Far end of the background gradient: a light wash of the accent. */
+  /** Far end of the background gradient: a pale wash of the brand color. */
   backgroundTint: string;
   dark: boolean;
   foreground: string;
@@ -168,11 +185,20 @@ export type SocialImagePalette = Readonly<{
   tileTop: string;
   /** Every background color text can sit on, for contrast checks. */
   surfaces: readonly string[];
+  /** The brand color behind the background wash and the icon glow. */
+  wash: string;
 }>;
 
-function backgroundStops(background: string, accent: string, dark: boolean) {
-  const tint = mix(background, accent, dark ? 0.08 : 0.06);
-  const glow = mix(tint, accent, dark ? 0.14 : 0.08);
+/**
+ * The page wash runs from the site background to a pale version of the
+ * accent, so two sites that share a background token (a cream paper, say)
+ * still get their own tint from their own brand color.
+ */
+function backgroundStops(background: string, wash: string, dark: boolean) {
+  const tint = dark
+    ? mix(background, wash, 0.2)
+    : mix(background, mix("#FFFFFF", wash, 0.34), 0.8);
+  const glow = mix(tint, wash, dark ? 0.12 : 0.1);
   return { glow, tint, surfaces: [background, tint, glow] as const };
 }
 
@@ -183,18 +209,21 @@ function backgroundStops(background: string, accent: string, dark: boolean) {
  */
 export function socialImagePalette(
   theme: Partial<SocialImageTheme> = {},
+  /** Wash color used when the theme sets none, such as an app icon's hue. */
+  brand?: string,
 ): SocialImagePalette {
   const resolved = parseSocialImageTheme(theme);
+  const wash = resolved.wash ?? (brand === undefined ? resolved.accent : color(brand, "brand"));
   const dark = relativeLuminance(resolved.foreground) > relativeLuminance(resolved.background);
   const extremeInk = dark ? "#FFFFFF" : "#000000";
   const extremeField = dark ? "#000000" : "#FFFFFF";
   let background = resolved.background;
   for (let step = 0; step <= 50; step += 1) {
     background = mix(resolved.background, extremeField, step / 50);
-    const { surfaces } = backgroundStops(background, resolved.accent, dark);
+    const { surfaces } = backgroundStops(background, wash, dark);
     if (worstContrast(extremeInk, surfaces) >= 7.5) break;
   }
-  const { surfaces, tint } = backgroundStops(background, resolved.accent, dark);
+  const { surfaces, tint } = backgroundStops(background, wash, dark);
   const foreground = readable(resolved.foreground, extremeInk, surfaces, 7);
   const muted = readable(resolved.muted, foreground, surfaces, dark ? 7 : 4.5);
   const primaryText = readable(resolved.accent, foreground, surfaces, 4.5);
@@ -214,6 +243,7 @@ export function socialImagePalette(
     surfaces,
     tileBottom,
     tileTop,
+    wash,
   };
 }
 
@@ -223,13 +253,14 @@ function parseSocialImageTheme(theme: unknown): SocialImageTheme {
     throw new TypeError("theme must be an object of six-digit hex colors.");
   }
   const fields = theme as Record<string, unknown>;
-  const pick = (key: keyof SocialImageTheme) =>
+  const pick = (key: keyof typeof plainSocialImageTheme) =>
     color(fields[key] ?? plainSocialImageTheme[key], key);
   return {
     accent: pick("accent"),
     background: pick("background"),
     foreground: pick("foreground"),
     muted: pick("muted"),
+    ...(fields.wash === undefined ? {} : { wash: color(fields.wash, "wash") }),
   };
 }
 
@@ -502,26 +533,75 @@ function normalizeSocialImageText(value: string): string {
   return value.replaceAll("\r\n", "\n").replaceAll("\r", "\n").replaceAll("\t", " ");
 }
 
-function assertSocialImageText(
+type TextField = "description" | "domain" | "eyebrow" | "headline" | "title";
+
+/** Characters a card dropped from one field, and why. */
+export type SocialImageRemoval = Readonly<{
+  field: TextField;
+  reason: "placeholder" | "unsupported";
+  text: string;
+}>;
+
+/**
+ * Bracketed placeholders left in by drafts and CMS defaults. They are removed
+ * wherever they appear; a field that holds nothing else counts as empty.
+ */
+const PLACEHOLDER = /\[\s*(?:draft|wip|untitled|todo|tbd|tk|placeholder|fixme|no title|title|description|headline|coming soon|preview|lorem ipsum)\s*\]/giu;
+
+// Emoji sequences and their joiners, selectors, skin tones, tags, and keycaps.
+const EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200D|\uFE0E|\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|[\u{E0020}-\u{E007F}])+/gu;
+
+function covered(fonts: SocialImageFonts, codePoint: number): boolean {
+  return fonts.every(({ data }) => fontHasGlyph(data, codePoint));
+}
+
+/** Collapses the spaces and stray separators that removals leave behind. */
+function tidy(value: string): string {
+  return value
+    .replace(/[ \u00A0]{2,}/gu, " ")
+    .replace(/ +([,.;:!?)\]])/gu, "$1")
+    .replace(/([([]) +/gu, "$1")
+    .replace(/\(\s*\)|\[\s*\]/gu, "")
+    .replace(/^[\s,.;:|·–—-]+/u, "")
+    .replace(/[\s,;:|·–—-]+$/u, "")
+    .trim();
+}
+
+/**
+ * Drops bracketed placeholders and every character the embedded fonts cannot
+ * draw (emoji, CJK, and other scripts outside Nebula Sans), so the renderer
+ * never falls back to a tofu box or a network font. Deterministic: the same
+ * input always yields the same text.
+ */
+function cleanSocialImageText(
   value: string,
-  label: "description" | "domain" | "eyebrow" | "headline" | "title",
+  field: TextField,
   fonts: SocialImageFonts,
-): void {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === 0x0a) {
-      continue;
+  removals: SocialImageRemoval[],
+): string {
+  const before = removals.length;
+  let text = value.replace(PLACEHOLDER, (match) => {
+    removals.push({ field, reason: "placeholder", text: match });
+    return " ";
+  });
+  const dropped: string[] = [];
+  text = text.replace(EMOJI, (match) => {
+    dropped.push(match);
+    return " ";
+  });
+  let kept = "";
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint === 0x0a || covered(fonts, codePoint)) {
+      kept += character;
+    } else {
+      dropped.push(character);
+      kept += " ";
     }
-    if (codePoint !== undefined && fonts.every(({ data }) => fontHasGlyph(data, codePoint))) {
-      continue;
-    }
-    const notation = codePoint === undefined
-      ? "unknown"
-      : `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
-    throw new RangeError(
-      `${label} contains ${JSON.stringify(character)} (${notation}), which is not covered by the embedded Nebula Sans social fonts.`,
-    );
   }
+  if (dropped.length > 0) removals.push({ field, reason: "unsupported", text: dropped.join("") });
+  if (removals.length === before) return value;
+  return kept.split("\n").map(tidy).filter((line) => line.length > 0).join("\n");
 }
 
 type Measure = (text: string) => number;
@@ -594,24 +674,77 @@ function wrapText(text: string, width: number, measure: Measure, binding: Bindin
   return greedyLines(layoutUnits(text, binding), width, measure);
 }
 
-/** The narrowest wrap that keeps the same line count, for an even rag. */
+/** Words that read as dangling when they end a line or a shortened text. */
+const BINDING_WORDS = new Set([
+  "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "is", "its", "nor", "of", "on",
+  "or", "our", "so", "than", "that", "the", "their", "to", "via", "vs", "with", "your", "&", "+",
+]);
+
+function bare(word: string): string {
+  return word.replace(/[^\p{L}\p{N}&+]/gu, "").toLocaleLowerCase("en-US");
+}
+
+function dangling(word: string | undefined): boolean {
+  return word !== undefined && !ENDS_PHRASE.test(word) && BINDING_WORDS.has(bare(word));
+}
+
+/**
+ * Chooses where to break `text` into the fewest lines that fit, scoring every
+ * candidate: lines of even length win, and a line may not end on a binding
+ * word ("the", "and"), inside a proper name, or leave one word alone.
+ */
 function balanceText(text: string, width: number, measure: Measure): string[] {
-  const lines = wrapText(text, width, measure);
-  if (lines.length < 2) return lines;
-  // Never narrow past a bound group that fits, so balancing cannot split it.
-  const widest = Math.max(0, ...layoutUnits(text).map(measure).filter((size) => size <= width));
-  let low = Math.max(Math.floor(width * 0.5), Math.ceil(widest) - 1);
-  let high = width;
-  while (high - low > 2) {
-    const middle = Math.floor((low + high) / 2);
-    const trial = wrapText(text, middle, measure);
-    if (trial.length === lines.length && trial.every((line) => measure(line) <= middle)) {
-      high = middle;
-    } else {
-      low = middle;
+  // Short words and numbers never end a line, as in wrapText; a break
+  // inside a two-word name is allowed but costs as much as a dangling word.
+  const words = layoutUnits(text, "short");
+  const wordCount = text.split(/\s+/u).filter((word) => word.length > 0).length;
+  const count = greedyLines(words, width, measure).length;
+  if (count < 2 || count > 3 || words.length > 60) return wrapText(text, width, measure);
+  const widths = new Map<string, number>();
+  const size = (line: string) => {
+    let value = widths.get(line);
+    if (value === undefined) {
+      value = measure(line);
+      widths.set(line, value);
     }
+    return value;
+  };
+  const penalty = (lastUnit: string | undefined, nextUnit: string | undefined) => {
+    const lastWord = lastUnit?.split(" ").at(-1);
+    const nextWord = nextUnit?.split(" ")[0];
+    if (dangling(lastWord)) return 0.6;
+    if (capitalized(lastWord) && capitalized(nextWord) && !ENDS_PHRASE.test(lastWord ?? "")) return 1;
+    return /[,;:.!?]$/u.test(lastWord ?? "") ? -0.02 : 0;
+  };
+  let best: { cost: number; lines: string[] } | undefined;
+  const consider = (cuts: readonly number[]) => {
+    const bounds = [0, ...cuts, words.length];
+    const lines: string[] = [];
+    let cost = 0;
+    for (let index = 0; index < bounds.length - 1; index += 1) {
+      const from = bounds[index] ?? 0;
+      const to = bounds[index + 1] ?? 0;
+      const line = words.slice(from, to).join(" ");
+      if (size(line) > width) return;
+      lines.push(line);
+      if (index < bounds.length - 2) cost += penalty(words[to - 1], words[to]);
+      // A lone word is an orphan; one left on the last line (a widow) reads
+      // worst, so it costs more than a short lead-in line.
+      if (!line.includes(" ") && wordCount >= 4) cost += index === bounds.length - 2 ? 0.5 : 0.2;
+    }
+    const lengths = lines.map(size);
+    const longest = Math.max(...lengths);
+    for (const length of lengths) cost += ((longest - length) / width) ** 2;
+    if (best === undefined || cost < best.cost) best = { cost, lines };
+  };
+  for (let first = 1; first < words.length; first += 1) {
+    if (count === 2) {
+      consider([first]);
+      continue;
+    }
+    for (let second = first + 1; second < words.length; second += 1) consider([first, second]);
   }
-  return wrapText(text, high, measure);
+  return best?.lines ?? wrapText(text, width, measure);
 }
 
 const ELLIPSIS = "…";
@@ -651,9 +784,52 @@ function clampWith(
   if (last.length === 0) {
     last = truncateWord(rest[0] ?? "", width, measure);
   } else {
-    last = `${last.replace(/[\s,.;:!?\-–—]+$/u, "")}${ELLIPSIS}`;
+    last = `${withoutDanglingEnd(last.replace(/[\s,.;:!?\-–—]+$/u, ""))}${ELLIPSIS}`;
   }
   return [...head.map(fit), last];
+}
+
+/** Drops trailing binding words ("and", "the") so a cut never dangles. */
+function withoutDanglingEnd(text: string): string {
+  const words = text.split(" ");
+  while (words.length > 1 && dangling(words[words.length - 1])) words.pop();
+  return words.join(" ").replace(/[\s,;:\-–—]+$/u, "");
+}
+
+type Cut = "clause" | "ellipsis" | "none" | "sentence";
+
+/**
+ * Shorter versions of `text` that end at a natural boundary, longest first:
+ * whole sentences, then clauses ending before a comma, semicolon, colon,
+ * dash, or parenthesis. A clause keeps the text's closing punctuation.
+ */
+function boundaryCuts(text: string): { clause: string[]; sentence: string[] } {
+  const sentence: string[] = [];
+  const clause: string[] = [];
+  const closing = /[.!?]$/u.exec(text)?.[0] ?? "";
+  for (const match of text.matchAll(/[.!?]["'”’)]?(?=\s+["'“‘(]?[\p{Lu}\p{N}])/gu)) {
+    const end = match.index + match[0].length;
+    const words = text.slice(0, end).split(/\s+/u);
+    // "e.g." and "v1." are not sentence ends.
+    if (/^(?:e\.g|i\.e|etc|vs|v\d[\w.]*|mr|ms|dr|no)\.$/iu.test(words[words.length - 1] ?? "")) continue;
+    sentence.push(text.slice(0, end).trim());
+  }
+  for (const match of text.matchAll(/[,;:](?=\s)|\s[–—-]\s|\s\(/gu)) {
+    const index = match.index;
+    if (match[0] === ",") {
+      // A comma inside a list ("the score, setup, and main limit") is not a
+      // clause end: cutting there leaves half a list. Only the first comma
+      // of a sentence counts as a clause boundary.
+      const sentenceStart = Math.max(0, ...[...text.slice(0, index).matchAll(/[.!?;:]\s/gu)].map((m) => m.index + 2));
+      if (text.slice(sentenceStart, index).includes(",")) continue;
+    }
+    const head = withoutDanglingEnd(text.slice(0, index).trim());
+    if (head.length === 0) continue;
+    const ended = /[.!?]$/u.test(head) ? head : `${head}${closing}`;
+    clause.push(ended);
+  }
+  const unique = (list: string[]) => [...new Set(list)].sort((a, b) => b.length - a.length);
+  return { clause: unique(clause), sentence: unique(sentence) };
 }
 
 /**
@@ -740,15 +916,135 @@ function fitClamped(
   return block(fonts, lines, size, style);
 }
 
+type FitBlock = TextBlock & Readonly<{ cut: Cut }>;
+
+/** A shortened description must still say something. */
+const MIN_CUT_LENGTH = 24;
+
+/**
+ * Fits a description without an ellipsis: the whole text at the largest size
+ * in `sizes`, else the longest whole-sentence version, else the longest
+ * clause version (a sentence wins unless the clause keeps far more text).
+ * Returns null when nothing fits `accept`.
+ */
+function fitDescription(
+  fonts: SocialImageFonts,
+  text: string,
+  width: number,
+  sizes: readonly number[],
+  maxLines: number,
+  accept: (candidate: TextBlock) => boolean,
+  allowCut: boolean,
+): FitBlock | null {
+  const fit = (value: string) => {
+    for (const size of sizes) {
+      const candidate = fitWhole(fonts, value, width, [size], maxLines, BODY);
+      if (candidate !== null && accept(candidate)) return candidate;
+    }
+    return null;
+  };
+  const whole = fit(text);
+  if (whole !== null) return { ...whole, cut: "none" };
+  if (!allowCut) return null;
+  const { clause, sentence } = boundaryCuts(text);
+  const longest = (list: readonly string[]) => {
+    for (const value of list) {
+      if (value.length < MIN_CUT_LENGTH || value.split(" ").length < 3) continue;
+      const candidate = fit(value);
+      if (candidate !== null) return { block: candidate, length: value.length };
+    }
+    return undefined;
+  };
+  const bySentence = longest(sentence);
+  const byClause = longest(clause);
+  if (bySentence !== undefined && (byClause === undefined || bySentence.length >= byClause.length * 0.6)) {
+    return { ...bySentence.block, cut: "sentence" };
+  }
+  return byClause === undefined ? null : { ...byClause.block, cut: "clause" };
+}
+
+/** Last resort: whole words and an ellipsis in `maxLines` at the minimum size. */
+function clampDescription(fonts: SocialImageFonts, text: string, width: number, maxLines: number): FitBlock {
+  const clamped = fitClamped(fonts, text, width, SOCIAL_IMAGE_MIN_FONT_SIZE, maxLines, BODY);
+  const cut: Cut = clamped.lines.some((line) => line.endsWith(ELLIPSIS)) ? "ellipsis" : "none";
+  return { ...clamped, cut };
+}
+
 /* ------------------------------------------------------------------- icon */
 
 type ParsedIcon = Readonly<{
   aspect: number;
+  /** The art's own bounds inside the image, as fractions; the whole image when unknown. */
+  bounds: Readonly<{ bottom: number; left: number; right: number; top: number }>;
   kind: "app" | "mark";
   /** The source re-encoded as base64 so it nests safely inside SVG. */
   base64: string;
+  /** How the art sits in its tile: see {@link SocialImageIconShape}. */
+  shape: SocialImageIconShape;
+  /** The main saturated color of the art, when it can be measured. */
+  hue?: string;
   mime: "image/png" | "image/svg+xml";
 }>;
+
+const WHOLE = { bottom: 1, left: 0, right: 1, top: 0 } as const;
+
+/**
+ * How an `app` icon is drawn, measured from the art itself:
+ *
+ * - `square`: the art paints its whole canvas (opaque corners), so it fills
+ *   the rounded tile edge to edge and the tile clips it.
+ * - `solid`: the art is a filled silhouette with its own edge, such as a disc
+ *   or a rounded square. It is cropped to that edge and drawn alone at the
+ *   tile's size, with no tile behind it, so no rim shows around it.
+ * - `open`: anything else (an outline, a glyph on a transparent canvas). It
+ *   sits on a neutral plate, cropped and centered in the same 60% safe area
+ *   as a `mark` glyph.
+ */
+export type SocialImageIconShape = "open" | "solid" | "square";
+
+/**
+ * True when an SVG paints its whole view box: a first shape that is an
+ * unrounded rect from the origin covering the view box. Shaped art such as
+ * a disc or a rounded square counts as not full bleed.
+ */
+function svgShape(svg: string): SocialImageIconShape {
+  if (svgFullBleed(svg)) return "square";
+  const open = /<svg\b[^>]*>/iu.exec(svg)?.[0] ?? "";
+  const box = /viewBox\s*=\s*["']\s*[-+\d.eE]+[\s,]+[-+\d.eE]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/u.exec(open);
+  const body = svg.slice(svg.indexOf(open) + open.length).replace(/<defs\b[\s\S]*?<\/defs>/giu, "");
+  const first = /<(rect|circle|ellipse|path|g|polygon|image|use|text|line|polyline)\b[^>]*>/iu.exec(body);
+  const tag = first?.[1]?.toLowerCase();
+  if (first === null || /\bfill\s*=\s*["']none["']/u.test(first[0])) return "open";
+  const attr = (name: string) => Number(new RegExp(`\\b${name}\\s*=\\s*["']([-+\\d.eE]+)["']`, "u").exec(first[0])?.[1] ?? Number.NaN);
+  const width = Number(box?.[1] ?? Number.NaN);
+  const height = Number(box?.[2] ?? Number.NaN);
+  const large = (value: number, full: number) => Number.isFinite(value) && Number.isFinite(full) && value >= full * 0.8;
+  if (tag === "circle") return large(attr("r") * 2, Math.min(width, height)) ? "solid" : "open";
+  if (tag === "ellipse") return large(attr("rx") * 2, width) && large(attr("ry") * 2, height) ? "solid" : "open";
+  if (tag === "rect") return large(attr("width"), width) && large(attr("height"), height) ? "solid" : "open";
+  return "open";
+}
+
+function svgFullBleed(svg: string): boolean {
+  const open = /<svg\b[^>]*>/iu.exec(svg)?.[0] ?? "";
+  const box = /viewBox\s*=\s*["']\s*([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/u.exec(open);
+  const body = svg.slice(svg.indexOf(open) + open.length).replace(/<defs\b[\s\S]*?<\/defs>/giu, "");
+  const first = /<(rect|circle|ellipse|path|g|polygon|image|use|text|line|polyline)\b[^>]*>/iu.exec(body);
+  if (first?.[1]?.toLowerCase() !== "rect") return false;
+  const attr = (name: string) => new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "u").exec(first[0])?.[1];
+  if (/\bfill\s*=\s*["']none["']/u.test(first[0])) return false;
+  const round = Number(attr("rx") ?? attr("ry") ?? 0);
+  const fullWidth = box?.[3] ?? "100%";
+  const fullHeight = box?.[4] ?? "100%";
+  const at = (value: string | undefined, origin: string) => Number(value ?? 0) === Number(origin);
+  const covers = (value: string | undefined, full: string) =>
+    value === "100%" || (value !== undefined && Number(value) >= Number(full));
+  return (round === 0 || Number.isNaN(round))
+    && at(attr("x"), box?.[1] ?? "0")
+    && at(attr("y"), box?.[2] ?? "0")
+    && covers(attr("width"), fullWidth)
+    && covers(attr("height"), fullHeight);
+}
 
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/u;
 
@@ -816,6 +1112,16 @@ function svgAspect(svg: string): number {
  * Parses `details.icon` from an unknown value. The source must be a local
  * `data:` URL holding an SVG or PNG image; remote URLs and file paths throw.
  */
+/**
+ * How an icon will sit in its tile. A `mark` is always repainted as a glyph
+ * in the 60% safe area, so it reports "open"; an `app` icon reports the shape
+ * measured from its art (see {@link SocialImageIconShape}).
+ */
+export function socialImageIconShape(icon: SocialImageIcon): SocialImageIconShape {
+  const parsed = parseSocialImageIcon(icon);
+  return parsed.kind === "mark" ? "open" : parseIconSource(parsed.src, "app").shape;
+}
+
 export function parseSocialImageIcon(value: unknown): SocialImageIcon {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`icon must be an object with src and kind; received ${describe(value)}.`);
@@ -854,7 +1160,20 @@ function parseIconSource(src: string, kind: "app" | "mark"): ParsedIcon {
     const width = header.getUint32(16, false);
     const height = header.getUint32(20, false);
     if (width === 0 || height === 0) throw new RangeError("icon.src PNG has no pixels.");
-    return { aspect: Math.min(4, Math.max(0.25, width / height)), base64: payload, kind, mime };
+    const coverage = coverageOf(payload, bytes);
+    const bounds = coverage === undefined ? WHOLE : coverage.bounds;
+    const cropped = (width * (bounds.right - bounds.left)) / (height * (bounds.bottom - bounds.top));
+    return {
+      aspect: Math.min(4, Math.max(0.25, Number.isFinite(cropped) && cropped > 0 ? cropped : width / height)),
+      base64: payload,
+      bounds,
+      shape: coverage === undefined || coverage.cornersOpaque
+        ? "square"
+        : coverage.centerOpaque && coverage.fill >= 0.7 ? "solid" : "open",
+      ...(coverage?.hue === undefined ? {} : { hue: coverage.hue }),
+      kind,
+      mime,
+    };
   }
   let svg: string;
   if (encoded) {
@@ -876,9 +1195,46 @@ function parseIconSource(src: string, kind: "app" | "mark"): ParsedIcon {
   return {
     aspect: svgAspect(svg),
     base64: utf8Base64(svg),
+    bounds: WHOLE,
+    shape: svgShape(svg),
+    ...hueField(svgHue(svg)),
     kind,
     mime,
   };
+}
+
+function hueField(hue: string | undefined): { hue?: string } {
+  return hue === undefined ? {} : { hue };
+}
+
+/** The first saturated fill or stroke color an SVG declares. */
+function svgHue(svg: string): string | undefined {
+  for (const [, value = ""] of svg.matchAll(/(?:fill|stroke|stop-color)\s*[=:]\s*["']?\s*(#[0-9a-f]{6}|#[0-9a-f]{3})\b/giu)) {
+    const hex = value.length === 4
+      ? `#${value.slice(1).split("").map((digit) => digit + digit).join("")}`
+      : value;
+    const channels = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+    if (Math.max(...channels) - Math.min(...channels) >= 48) return hex.toUpperCase();
+  }
+  return undefined;
+}
+
+const coverageCache = new Map<string, RasterCoverage | undefined>();
+
+function coverageOf(payload: string, bytes: Uint8Array): RasterCoverage | undefined {
+  if (coverageCache.has(payload)) return coverageCache.get(payload);
+  let coverage: RasterCoverage | undefined;
+  try {
+    coverage = pngCoverage(bytes);
+  } catch {
+    coverage = undefined;
+  }
+  if (coverage !== undefined && (coverage.bounds.right <= coverage.bounds.left || coverage.bounds.bottom <= coverage.bounds.top)) {
+    coverage = undefined;
+  }
+  if (coverageCache.size > 64) coverageCache.clear();
+  coverageCache.set(payload, coverage);
+  return coverage;
 }
 
 function iconBox(aspect: number, box: number): { height: number; width: number } {
@@ -889,10 +1245,35 @@ function iconBox(aspect: number, box: number): { height: number; width: number }
 
 /** The icon's alpha repainted in one solid color, as an SVG data URL. */
 function knockoutSource(icon: ParsedIcon, fill: string): string {
-  const width = Math.round(icon.aspect >= 1 ? 1000 : 1000 * icon.aspect);
-  const height = Math.round(icon.aspect >= 1 ? 1000 / icon.aspect : 1000);
+  return artSource(icon, fill);
+}
+
+/**
+ * The icon cropped to its own bounds, as an SVG data URL, optionally with its
+ * alpha repainted in one solid color. Cropping lets every glyph fill the same
+ * share of its tile however much empty margin the source file carries.
+ */
+function artSource(icon: ParsedIcon, fill?: string): string {
+  const { bottom, left, right, top } = icon.bounds;
+  const cropped = left > 0 || top > 0 || right < 1 || bottom < 1;
+  if (fill === undefined && !cropped) return `data:${icon.mime};base64,${icon.base64}`;
+  // Full image size in a 1000-unit space, then a view box around the art.
+  const fullAspect = icon.aspect * ((bottom - top) / (right - left));
+  const imageWidth = fullAspect >= 1 ? 1000 : 1000 * fullAspect;
+  const imageHeight = fullAspect >= 1 ? 1000 / fullAspect : 1000;
+  const x = Math.round(left * imageWidth);
+  const y = Math.round(top * imageHeight);
+  const width = Math.max(1, Math.round((right - left) * imageWidth));
+  const height = Math.max(1, Math.round((bottom - top) * imageHeight));
+  const iw = String(Math.round(imageWidth));
+  const ih = String(Math.round(imageHeight));
   const href = `data:${icon.mime};base64,${icon.base64}`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${String(width)} ${String(height)}" width="${String(width)}" height="${String(height)}"><mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="${String(width)}" height="${String(height)}" style="mask-type:alpha" mask-type="alpha"><image href="${href}" xlink:href="${href}" width="${String(width)}" height="${String(height)}"/></mask><rect width="${String(width)}" height="${String(height)}" fill="${fill}" mask="url(#k)"/></svg>`;
+  const view = `viewBox="${String(x)} ${String(y)} ${String(width)} ${String(height)}" width="${String(width)}" height="${String(height)}"`;
+  if (fill === undefined) {
+    const plain = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ${view}><image href="${href}" xlink:href="${href}" width="${iw}" height="${ih}" preserveAspectRatio="none"/></svg>`;
+    return `data:image/svg+xml;base64,${utf8Base64(plain)}`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ${view}><mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="${iw}" height="${ih}" style="mask-type:alpha" mask-type="alpha"><image href="${href}" xlink:href="${href}" width="${iw}" height="${ih}" preserveAspectRatio="none"/></mask><rect width="${iw}" height="${ih}" fill="${fill}" mask="url(#k)"/></svg>`;
   return `data:image/svg+xml;base64,${utf8Base64(svg)}`;
 }
 
@@ -1012,6 +1393,10 @@ function tileArt(details: SocialImageDetails, title: string): TileArt {
   return { letter, type: "letter" };
 }
 
+/** Share of a tile's side that a `mark` glyph's own bounds fill. */
+export const SOCIAL_IMAGE_GLYPH_SHARE = 0.6;
+const GLYPH_SHARE = SOCIAL_IMAGE_GLYPH_SHARE;
+
 function tile({ art, palette, size }: {
   art: TileArt;
   palette: SocialImagePalette;
@@ -1020,17 +1405,34 @@ function tile({ art, palette, size }: {
   const radius = Math.round(size * 0.235);
   const glow = `0 ${String(Math.round(size * 0.1))}px ${String(Math.round(size * 0.26))}px ${palette.dark ? rgba(palette.tileTop, 0.55) : rgba(palette.tileBottom, 0.3)}`;
   const rim = Math.max(2, Math.round(size / 120));
-  if (art.type === "app") {
-    const surface = palette.dark ? mix(palette.background, "#FFFFFF", 0.1) : "#FFFFFF";
+  if (art.type === "app" && art.icon.shape === "solid") {
+    // A filled silhouette is already a finished icon: draw it alone, cropped
+    // to its own edge, so no tile shows around it as a thin rim.
+    const box = iconBox(art.icon.aspect, size);
+    return (
+      <div style={{ alignItems: "center", display: "flex", flexShrink: 0, height: size, justifyContent: "center", width: size }}>
+        <img
+          alt=""
+          height={box.height}
+          src={artSource(art.icon)}
+          style={{ height: box.height, width: box.width }}
+          width={box.width}
+        />
+      </div>
+    );
+  }
+  if (art.type === "app" && art.icon.shape === "square") {
+    // Edge-to-edge art fills the rounded tile, clipped to its corners; a
+    // hairline keeps a white or background-colored icon from dissolving.
     return (
       <div
         style={{
-          backgroundColor: surface,
           borderRadius: radius,
           boxShadow: glow,
           display: "flex",
           flexShrink: 0,
           height: size,
+          overflow: "hidden",
           position: "relative",
           width: size,
         }}
@@ -1038,8 +1440,8 @@ function tile({ art, palette, size }: {
         <img
           alt=""
           height={size}
-          src={`data:${art.icon.mime};base64,${art.icon.base64}`}
-          style={{ borderRadius: radius, height: size, objectFit: "cover", width: size }}
+          src={artSource(art.icon)}
+          style={{ borderRadius: radius, height: size, width: size }}
           width={size}
         />
         <div
@@ -1057,8 +1459,39 @@ function tile({ art, palette, size }: {
       </div>
     );
   }
-  const glyphBox = Math.round(size * 0.56);
+  // Glyph safe area: the art's own bounds fill 60% of the tile, centered.
+  const glyphBox = Math.round(size * GLYPH_SHARE);
   let glyph: ReactNode;
+  if (art.type === "app") {
+    // Open app art keeps its own colors on a neutral plate.
+    const box = iconBox(art.icon.aspect, glyphBox);
+    return (
+      <div
+        style={{
+          alignItems: "center",
+          backgroundImage: palette.dark
+            ? `linear-gradient(150deg, ${mix(palette.background, "#FFFFFF", 0.16)} 0%, ${mix(palette.background, "#FFFFFF", 0.08)} 100%)`
+            : `linear-gradient(150deg, #FFFFFF 0%, ${mix("#FFFFFF", palette.background, 0.45)} 100%)`,
+          border: `${String(rim)}px solid ${palette.dark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.07)"}`,
+          borderRadius: radius,
+          boxShadow: glow,
+          display: "flex",
+          flexShrink: 0,
+          height: size,
+          justifyContent: "center",
+          width: size,
+        }}
+      >
+        <img
+          alt=""
+          height={box.height}
+          src={artSource(art.icon)}
+          style={{ height: box.height, width: box.width }}
+          width={box.width}
+        />
+      </div>
+    );
+  }
   if (art.type === "mark") {
     const box = iconBox(art.icon.aspect, glyphBox);
     glyph = (
@@ -1116,13 +1549,14 @@ function ghostArt({ art, palette, size }: {
 }): ReactElement {
   const faint = mix(palette.background, palette.tileTop, palette.dark ? 0.16 : 0.1);
   if (art.type === "app") {
+    const box = art.icon.shape === "square" ? { height: size, width: size } : iconBox(art.icon.aspect, size);
     return (
       <img
         alt=""
-        height={size}
-        src={`data:${art.icon.mime};base64,${art.icon.base64}`}
-        style={{ borderRadius: Math.round(size * 0.235), height: size, opacity: 0.07, width: size }}
-        width={size}
+        height={box.height}
+        src={artSource(art.icon)}
+        style={{ borderRadius: art.icon.shape === "square" ? Math.round(size * 0.235) : 0, height: box.height, opacity: 0.07, width: box.width }}
+        width={box.width}
       />
     );
   }
@@ -1208,12 +1642,58 @@ type Copy = Readonly<{
 
 type Box = Readonly<{ height: number; width: number; x: number; y: number }>;
 
-type CardLayout = Readonly<{ element: ReactElement; ghost?: Box; textBoxes: readonly Box[] }>;
+type CardFit = Readonly<{
+  description: FitBlock | undefined;
+  eyebrow: TextBlock | undefined;
+  headline: TextBlock;
+  /** True when the headline is set below its layout's standard size. */
+  reduced: boolean;
+}>;
 
+type CardLayout = Readonly<{ element: ReactElement; fit: CardFit; ghost?: Box; textBoxes: readonly Box[] }>;
+
+/** Section words that name the same thing, so "Docs" over "Documentation" reads twice. */
+const SECTION_WORDS: Readonly<Record<string, string>> = {
+  compare: "compare",
+  comparison: "compare",
+  comparisons: "compare",
+  doc: "doc",
+  docs: "doc",
+  documentation: "doc",
+  faq: "faq",
+  faqs: "faq",
+  intro: "introduc",
+  introducing: "introduc",
+  introduction: "introduc",
+  reference: "reference",
+  references: "reference",
+  release: "release",
+  releases: "release",
+};
+
+function sectionKey(word: string): string {
+  return SECTION_WORDS[word] ?? word.replace(/(?<=\p{L}{3})s$/u, "");
+}
+
+/**
+ * The eyebrow, unless the card already shows it: equal to another line, the
+ * opening words of one ("Introducing" over "Introducing Gobstopper"), or a
+ * section word with the same meaning as the headline's first word ("Docs"
+ * over "Documentation"). Case and punctuation are ignored.
+ */
 function eyebrowKicker(copy: Copy, shown: readonly string[]): string | undefined {
-  if (copy.eyebrow === undefined || copy.eyebrow.trim().length === 0) return undefined;
-  const key = brandKey(copy.eyebrow);
-  return shown.some((text) => brandKey(text) === key) ? undefined : copy.eyebrow.trim();
+  const eyebrow = copy.eyebrow?.trim();
+  if (eyebrow === undefined || eyebrow.length === 0) return undefined;
+  const words = (value: string) => brandKey(value).split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0);
+  const key = words(eyebrow);
+  if (key.length === 0) return undefined;
+  for (const text of shown) {
+    const other = words(text);
+    if (other.length >= key.length && key.every((word, index) => other[index] === word)) return undefined;
+  }
+  const first = words(copy.headline)[0];
+  if (key.length === 1 && first !== undefined && sectionKey(key[0] ?? "") === sectionKey(first)) return undefined;
+  return eyebrow;
 }
 
 const PRODUCT = {
@@ -1247,19 +1727,20 @@ function productCard(
   const domainGap = 30;
   const descBudget = PRODUCT.maxGroup - kickerSpace - blockHeight(name) - blockHeight(domain) - domainGap - nameGap;
 
-  let description: TextBlock | undefined;
+  let description: FitBlock | undefined;
   if (copy.description.length > 0) {
-    const fitsBudget = (candidate: TextBlock | null) =>
-      candidate !== null && blockHeight(candidate) <= descBudget ? candidate : null;
-    description = fitsBudget(fitWhole(fonts, copy.description, column, [40, 38, 36, 34, 32, 30], 2, BODY))
-      ?? fitsBudget(fitWhole(fonts, copy.description, column, [36, 34, 32], 3, BODY))
-      ?? fitClamped(
+    const fitsBudget = (candidate: TextBlock) => blockHeight(candidate) <= descBudget;
+    const two = [40, 38, 36, 34, 32, 30];
+    const three = [36, 34, 32];
+    description = fitDescription(fonts, copy.description, column, two, 2, fitsBudget, false)
+      ?? fitDescription(fonts, copy.description, column, three, 3, fitsBudget, false)
+      ?? fitDescription(fonts, copy.description, column, two, 2, fitsBudget, true)
+      ?? fitDescription(fonts, copy.description, column, three, 3, fitsBudget, true)
+      ?? clampDescription(
         fonts,
         copy.description,
         column,
-        SOCIAL_IMAGE_MIN_FONT_SIZE,
         Math.max(1, Math.min(3, Math.floor(descBudget / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)))),
-        BODY,
       );
   }
 
@@ -1311,14 +1792,19 @@ function productCard(
       </div>
     </div>
   );
-  return { element, textBoxes };
+  return { element, fit: { description, eyebrow: kicker, headline: name, reduced: name.size < 72 }, textBoxes };
 }
 
 const PAGE = {
   bottom: 72,
   descriptionWidth: 860,
   headlineWidth: 880,
+  descriptionSizes: [36, 34, 32, 30],
   headGap: 30,
+  /** The headline size for one and two lines. */
+  headline: 80,
+  /** Sizes tried, largest first, when the headline needs three lines. */
+  headlineThreeLine: [62, 58, 54, 50, 46],
   lockup: 112,
   lockupGap: 28,
   minGapBelowLockup: 40,
@@ -1341,60 +1827,65 @@ function pageCard(
   const kickerSpace = kicker === undefined ? 0 : blockHeight(kicker) + 16;
   const available = CARD_HEIGHT - PAGE.top - PAGE.bottom - PAGE.lockup - PAGE.minGapBelowLockup - kickerSpace;
 
-  const headSizes = [96, 88, 80, 72, 66, 60, 54, 50] as const;
-  const descSizes = [36, 34, 32, 30] as const;
   const descriptionWidth = Math.min(width, PAGE.descriptionWidth);
-  let headline: TextBlock | undefined;
-  let description: TextBlock | undefined;
   const hasDescription = copy.description.length > 0;
 
-  search: for (const size of headSizes) {
-    const head = fitWhole(fonts, copy.headline, width, [size], 3, HEADLINE);
-    if (head === null) continue;
-    if (!hasDescription) {
-      if (blockHeight(head) <= available) {
-        headline = head;
-        break;
-      }
-      continue;
-    }
-    for (const descSize of descSizes) {
-      const desc = fitWhole(fonts, copy.description, descriptionWidth, [descSize], 2, BODY);
-      if (desc !== null && blockHeight(head) + PAGE.headGap + blockHeight(desc) <= available) {
-        headline = head;
-        description = desc;
-        break search;
-      }
-    }
-  }
-  if (headline === undefined) {
-    // No size keeps the whole description; keep the largest headline that
-    // leaves room for two clamped description lines, then one.
-    for (const lines of hasDescription ? [2, 1, 0] : [0]) {
-      const room = available - (lines === 0 ? 0 : PAGE.headGap + lines * SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight);
-      for (const size of headSizes) {
-        const head = fitWhole(fonts, copy.headline, width, [size], 3, HEADLINE);
-        if (head !== null && blockHeight(head) <= room) {
+  // One headline size for every one- and two-line headline, so cards across
+  // a site match; smaller sizes only when three lines are unavoidable.
+  // A headline that would break into two lines with a lone word ("Query /
+  // the derived graph") but fits the card's full width stays on one line;
+  // the ghost art moves aside for it.
+  const oneLine = fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [PAGE.headline], 1, HEADLINE);
+  const balanced = fitWhole(fonts, copy.headline, width, [PAGE.headline], 2, HEADLINE);
+  const orphaned = balanced !== null && balanced.lines.length === 2
+    && balanced.lines.some((line) => !/\s/u.test(line.trim()));
+  // Two lines at the full width come before any smaller size: the headline
+  // size changes only when three lines are unavoidable.
+  const wide = balanced === null
+    ? fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [PAGE.headline], 2, HEADLINE)
+    : null;
+  const twoLine = oneLine !== null && (balanced === null || orphaned) ? oneLine : balanced ?? wide;
+  const heads = twoLine === null
+    ? PAGE.headlineThreeLine
+      .flatMap((size) => [
+        fitWhole(fonts, copy.headline, width, [size], 3, HEADLINE),
+        fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [size], 3, HEADLINE),
+      ])
+      .filter((head): head is TextBlock => head !== null)
+    : [twoLine];
+  let headline: TextBlock | undefined;
+  let description: FitBlock | undefined;
+  const room = (head: TextBlock) => available - blockHeight(head) - PAGE.headGap;
+  if (hasDescription) {
+    const passes = [
+      (head: TextBlock) => fitDescription(fonts, copy.description, descriptionWidth, PAGE.descriptionSizes, 2, (desc) => blockHeight(desc) <= room(head), false),
+      (head: TextBlock) => fitDescription(fonts, copy.description, descriptionWidth, PAGE.descriptionSizes, 2, (desc) => blockHeight(desc) <= room(head), true),
+      (head: TextBlock) => {
+        const lines = Math.min(2, Math.floor(room(head) / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)));
+        return lines < 1 ? null : clampDescription(fonts, copy.description, descriptionWidth, lines);
+      },
+    ];
+    search: for (const pass of passes) {
+      for (const head of heads) {
+        const desc = pass(head);
+        if (desc !== null) {
           headline = head;
-          break;
+          description = desc;
+          break search;
         }
       }
-      if (headline !== undefined) {
-        description = lines === 0
-          ? undefined
-          : fitClamped(fonts, copy.description, descriptionWidth, SOCIAL_IMAGE_MIN_FONT_SIZE, lines, BODY);
-        break;
-      }
     }
+  } else {
+    headline = heads.find((head) => blockHeight(head) <= available);
   }
   if (headline === undefined) {
-    const smallest = headSizes[headSizes.length - 1] ?? 50;
+    const smallest = PAGE.headlineThreeLine[PAGE.headlineThreeLine.length - 1] ?? 50;
     headline = fitClamped(
       fonts,
       copy.headline,
       width,
       smallest,
-      Math.max(1, Math.floor(available / (smallest * HEADLINE.lineHeight))),
+      Math.max(1, Math.min(3, Math.floor(available / (smallest * HEADLINE.lineHeight)))),
       HEADLINE,
     );
   }
@@ -1469,6 +1960,7 @@ function pageCard(
   );
   return {
     element,
+    fit: { description, eyebrow: kicker, headline, reduced: headline.size < PAGE.headline },
     ...(ghost === undefined ? {} : { ghost: ghostBox(art, ghost) }),
     textBoxes: textBoxes.slice(0, 2).concat(textBoxes.slice(3)),
   };
@@ -1482,7 +1974,8 @@ function ghostBox(art: TileArt, ghost: GhostPlacement): Box {
 }
 
 function artAspect(art: TileArt): number {
-  return art.type === "app" || art.type === "mark" ? (art.type === "app" ? 1 : art.icon.aspect) : 1;
+  if (art.type === "app") return art.icon.shape === "solid" ? art.icon.aspect : 1;
+  return art.type === "mark" ? art.icon.aspect : 1;
 }
 
 /**
@@ -1536,43 +2029,108 @@ export function socialImageGeometry(details: SocialImageDetails): SocialImageGeo
   return ghost === undefined ? { textBoxes } : { ghost, textBoxes };
 }
 
-function renderSocialImageCard(
-  details: SocialImageDetails,
-): SocialImageCard & { ghost?: Box; textBoxes: readonly Box[] } {
-  const palette = socialImagePalette(details.theme ?? {});
+/** How a card's copy was fitted, for tests and builds that check copy. */
+export type SocialImageFit = Readonly<{
+  description: Readonly<{
+    /**
+     * "none" when the whole description is shown; "sentence" or "clause" when
+     * it ends at an earlier sentence or clause boundary; "ellipsis" when no
+     * boundary fit and the text is clamped with "…".
+     */
+    cut: "clause" | "ellipsis" | "none" | "sentence";
+    lines: readonly string[];
+    size: number;
+  }> | undefined;
+  /** The eyebrow as drawn, or undefined when it was empty or repeated the headline. */
+  eyebrow: string | undefined;
+  headline: Readonly<{
+    lines: readonly string[];
+    size: number;
+    /**
+     * True when the headline did not fit two lines at the layout's standard
+     * size (80px on a page card, 72px or more on a product card) and was set
+     * smaller to fit. Assert it is false to keep a site's headlines uniform.
+     */
+    reduced: boolean;
+    /** True when the headline is drawn on three lines. */
+    threeLine: boolean;
+    truncated: boolean;
+  }>;
+  /** Human-readable findings; empty when the copy fits as written. */
+  issues: readonly string[];
+  layout: SocialImageLayout;
+  /** Placeholders and characters the card left out. */
+  removed: readonly SocialImageRemoval[];
+}>;
+
+type RenderedCard = SocialImageCard & { fit: SocialImageFit; ghost?: Box; textBoxes: readonly Box[] };
+
+function fitIssues(fit: Omit<SocialImageFit, "issues">): string[] {
+  const issues: string[] = [];
+  for (const removal of fit.removed) {
+    issues.push(removal.reason === "placeholder"
+      ? `${removal.field} contains the placeholder ${JSON.stringify(removal.text)}`
+      : `${removal.field} contains ${JSON.stringify(removal.text)}, which the embedded Nebula Sans fonts cannot draw`);
+  }
+  if (fit.headline.truncated) issues.push("headline does not fit and was clamped with an ellipsis");
+  else if (fit.headline.threeLine) issues.push(`headline needs three lines, so it is set at ${String(fit.headline.size)}px`);
+  else if (fit.headline.reduced) issues.push(`headline does not fit two lines at the standard size, so it is set at ${String(fit.headline.size)}px`);
+  if (fit.description !== undefined && fit.description.cut !== "none") {
+    issues.push(fit.description.cut === "ellipsis"
+      ? "description does not fit and was clamped with an ellipsis"
+      : `description was shortened to its last whole ${fit.description.cut} that fits`);
+  }
+  return issues;
+}
+
+function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
   const layout = socialImageLayout(details);
   const fonts = nebulaSansSocialFonts();
+  const removed: SocialImageRemoval[] = [];
+  const clean = (value: string, field: TextField) =>
+    cleanSocialImageText(normalizeSocialImageText(value), field, fonts, removed);
   const copy = {
-    description: normalizeSocialImageText(details.description),
-    domain: normalizeSocialImageText(details.domain),
-    eyebrow: details.eyebrow === undefined
-      ? undefined
-      : normalizeSocialImageText(details.eyebrow),
-    headline: normalizeSocialImageText(socialImageHeadline(details)),
-    lockup: normalizeSocialImageText(lockupName(details)),
+    description: clean(details.description, "description"),
+    domain: clean(details.domain, "domain"),
+    eyebrow: details.eyebrow === undefined ? undefined : clean(details.eyebrow, "eyebrow"),
+    headline: clean(socialImageHeadline(details), details.headline === undefined ? "title" : "headline"),
+    lockup: clean(lockupName(details), "title"),
   };
-  assertSocialImageText(copy.description, "description", fonts);
-  assertSocialImageText(copy.domain, "domain", fonts);
-  if (copy.eyebrow !== undefined) {
-    assertSocialImageText(copy.eyebrow, "eyebrow", fonts);
-  }
-  assertSocialImageText(
-    copy.headline,
-    details.headline === undefined ? "title" : "headline",
-    fonts,
-  );
-  assertSocialImageText(copy.lockup, "title", fonts);
+  // A headline that was only a placeholder falls back to the product name.
+  const headline = copy.headline.length > 0 ? copy.headline : copy.lockup;
   const flat: Copy = {
     description: oneLine(copy.description),
     domain: oneLine(copy.domain),
-    eyebrow: copy.eyebrow === undefined ? undefined : oneLine(copy.eyebrow),
-    headline: oneLine(copy.headline),
-    lockup: oneLine(copy.lockup),
+    eyebrow: copy.eyebrow === undefined || copy.eyebrow.length === 0 ? undefined : oneLine(copy.eyebrow),
+    headline: oneLine(headline),
+    lockup: oneLine(copy.lockup.length > 0 ? copy.lockup : headline),
   };
   const art = tileArt(details, flat.lockup.length > 0 ? flat.lockup : flat.headline);
+  const brand = art.type === "app" || art.type === "mark" ? art.icon.hue : undefined;
+  const palette = socialImagePalette(details.theme ?? {}, art.type === "app" ? brand : undefined);
   const card = layout === "page"
     ? pageCard(flat, art, palette, fonts)
     : productCard(flat, art, palette, fonts);
+
+  const measured: Omit<SocialImageFit, "issues"> = {
+    description: card.fit.description === undefined
+      ? undefined
+      : { cut: card.fit.description.cut, lines: card.fit.description.lines, size: card.fit.description.size },
+    eyebrow: card.fit.eyebrow?.lines.join(" "),
+    headline: {
+      lines: card.fit.headline.lines,
+      size: card.fit.headline.size,
+      reduced: card.fit.reduced,
+      threeLine: card.fit.headline.lines.length >= 3,
+      truncated: card.fit.headline.lines.some((line) => line.endsWith(ELLIPSIS)),
+    },
+    layout,
+    removed,
+  };
+  const fit: SocialImageFit = { ...measured, issues: fitIssues(measured) };
+  if (details.strict === true && fit.issues.length > 0) {
+    throw new RangeError(`social image copy does not fit as written: ${fit.issues.join("; ")}.`);
+  }
 
   return {
     element: (
@@ -1590,12 +2148,23 @@ function renderSocialImageCard(
         {card.element}
       </div>
     ),
+    fit,
     fonts,
     ...(card.ghost === undefined ? {} : { ghost: card.ghost }),
     height: CARD_HEIGHT,
     textBoxes: card.textBoxes,
     width: CARD_WIDTH,
   };
+}
+
+/**
+ * Lays out a card without rendering it and reports how its copy fitted:
+ * whether the description was shortened, whether the headline needed three
+ * lines, and what placeholders or undrawable characters were left out. A
+ * site can assert `socialImageFit(details).issues` is empty in its tests.
+ */
+export function socialImageFit(details: SocialImageDetails): SocialImageFit {
+  return renderSocialImageCard({ ...details, strict: false }).fit;
 }
 
 export function createSocialImageCard(
@@ -1649,8 +2218,12 @@ export function socialImageSiteDetails(
   site: SocialImageSite,
   page: SocialImagePage = {},
 ): SocialImageDetails {
+  // The site tagline describes the product, not a page: a page card with no
+  // description of its own leaves the subtitle empty.
+  const pageCard = page.layout === "page"
+    || (page.layout === undefined && page.headline !== undefined && page.headline !== site.name);
   return {
-    description: page.description ?? site.description,
+    description: page.description ?? (pageCard ? "" : site.description),
     domain: site.domain,
     title: site.name,
     ...(page.eyebrow === undefined ? {} : { eyebrow: page.eyebrow }),
