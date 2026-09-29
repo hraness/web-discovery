@@ -649,9 +649,41 @@ describe("v0.11 card copy and art rules", () => {
       const shown = result.description?.lines ?? [];
       if (result.description?.cut === "ellipsis") return;
       expect(shown.join(" ")).not.toContain("…");
-      expect(bindingWords.has(lastWord(shown))).toBe(false);
+      // Copy shown whole is the author's own ending; only a cut is checked.
+      if (result.description?.cut !== "none") expect(bindingWords.has(lastWord(shown))).toBe(false);
       expect(shown.join(" ").endsWith(".")).toBe(true);
     }), { numRuns: 60 });
+  });
+
+  test("keeps product descriptions at the standard size on two lines, cutting at a clause", () => {
+    const fit = socialImageFit({
+      ...base,
+      description: "Oh is open-source memory for agents that stores each fact with its sources and every change in a history you can replay.",
+      title: "Oh",
+    });
+    expect(fit.layout).toBe("product");
+    expect(fit.description?.lines.length).toBe(2);
+    expect(fit.description?.size).toBeGreaterThanOrEqual(36);
+    expect(fit.description?.cut).toBe("clause");
+    expect(fit.description?.lines.join(" ")).toBe("Oh is open-source memory for agents that stores each fact with its sources.");
+
+    const word = fc.stringMatching(/^[a-z]{3,9}$/u);
+    const sentence = fc.array(word, { minLength: 3, maxLength: 40 }).map((words) => `${words.join(" ")}.`);
+    fc.assert(fc.property(sentence, (description) => {
+      const product = socialImageFit({ ...base, description, title: "Example" });
+      expect(product.description?.lines.length ?? 0).toBeLessThanOrEqual(2);
+    }), { numRuns: 40 });
+  });
+
+  test("cuts before a dash and never leaves a one-word fragment after one", () => {
+    const fit = socialImageFit(pageCopy("A guide", "Guía en español 🇵🇷 con fuentes oficiales — 日本語 too 🚀"));
+    expect(fit.description?.lines.join(" ")).toBe("Guía en español con fuentes oficiales");
+  });
+
+  test("breaks a headline elsewhere rather than strand one word after a name", () => {
+    const fit = socialImageFit(pageCopy("Ley 60 en Puerto Rico guide", ""));
+    expect(fit.headline.lines).toEqual(["Ley 60", "en Puerto Rico guide"]);
+    for (const line of fit.headline.lines) expect(line.includes(" ")).toBe(true);
   });
 
   test("keeps the ellipsis as a last resort and reports it", () => {

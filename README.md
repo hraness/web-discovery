@@ -272,7 +272,7 @@ Every icon sits in the tile by one rule:
 
 `socialImageIconShape(icon)` returns `"square"`, `"solid"`, or `"open"`, so a site can check which case its icon falls into.
 
-Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on a line, and a two-word name such as "Puerto Rico" is kept together even when that costs a short last line.
+Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on the last line, and a two-word name such as "Puerto Rico" stays together unless that would strand the last word, in which case the break moves earlier ("Ley 60 / en Puerto Rico guide"). A description is cut before an em or en dash rather than after it, and a product description keeps its standard size and two-line limit, ending at a clause.
 
 - **Headline.** A page headline is set at 80 pixels on one or two lines. Only a headline that cannot fit two lines at 80 pixels is set smaller, at the largest of 62 to 46 pixels where it fits in up to three lines.
 - **Description.** A description that does not fit ends at its last whole sentence or clause that does, never on a word such as "and". The card ends it with an ellipsis only when no clause fits.
@@ -288,7 +288,7 @@ import { socialImageFit, socialImageSiteDetails } from "@hraness/web-discovery/s
 expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual([]);
 ```
 
-The background runs from the theme background to a pale wash of the brand color, so two sites that share a background token still look different. The wash is `theme.wash` when you pass it, else the main color of an `app` icon, else the accent. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against every part of the background.
+The brand color is mixed into the whole background, and the gradient deepens toward a paler wash of it in the far corner, so two sites that share a background token read as different hues side by side. The wash is `theme.wash` when you pass it, else the main color of an `app` icon, else the accent. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against every part of the background.
 
 The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
 
