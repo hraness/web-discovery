@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.11.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.11.1"
   }
 }
 ```
@@ -370,6 +370,8 @@ createSiteSocialImageResponse(socialSite, {
 A page card without a `description` shows no description. It does not repeat the site tagline, which appears only on the home card.
 
 v0.11.0 changes how existing cards look, with no API change: descriptions end at a clause instead of an ellipsis, page cards without a description no longer show the tagline, duplicate eyebrows, placeholders, and unsupported characters are removed, headlines keep one size for one or two lines, the background wash follows each site's brand color, and icons sit in the safe area above. The new exports are `socialImageFit`, `socialImageIconShape`, and `SOCIAL_IMAGE_GLYPH_SHARE`, plus the optional `strict` and `theme.wash` fields.
+
+v0.11.1 fixes typechecking for consumers whose `tsconfig.json` sets `erasableSyntaxOnly`. The published source no longer uses TypeScript syntax that the option rejects, and cards render the same.
 
 `defineSocialImageSite` checks the name, domain, description, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
