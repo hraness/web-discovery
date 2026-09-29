@@ -195,11 +195,13 @@ export type SocialImagePalette = Readonly<{
  * still get their own tint from their own brand color.
  */
 function backgroundStops(background: string, wash: string, dark: boolean) {
-  const tint = dark
-    ? mix(background, wash, 0.2)
-    : mix(background, mix("#FFFFFF", wash, 0.34), 0.8);
+  // The wash is mixed into the base itself, not only the far corner, so the
+  // whole card carries the brand hue; the gradient then deepens it.
+  const pale = dark ? wash : mix("#FFFFFF", wash, 0.42);
+  const base = mix(background, pale, dark ? 0.08 : 0.3);
+  const tint = mix(background, pale, dark ? 0.2 : 0.72);
   const glow = mix(tint, wash, dark ? 0.12 : 0.1);
-  return { glow, tint, surfaces: [background, tint, glow] as const };
+  return { base, glow, tint, surfaces: [base, tint, glow] as const };
 }
 
 /**
@@ -223,7 +225,7 @@ export function socialImagePalette(
     const { surfaces } = backgroundStops(background, wash, dark);
     if (worstContrast(extremeInk, surfaces) >= 7.5) break;
   }
-  const { surfaces, tint } = backgroundStops(background, wash, dark);
+  const { base, surfaces, tint } = backgroundStops(background, wash, dark);
   const foreground = readable(resolved.foreground, extremeInk, surfaces, 7);
   const muted = readable(resolved.muted, foreground, surfaces, dark ? 7 : 4.5);
   const primaryText = readable(resolved.accent, foreground, surfaces, 4.5);
@@ -233,7 +235,7 @@ export function socialImagePalette(
     ? "#FFFFFF"
     : readable(mix(resolved.accent, "#000000", 0.55), "#000000", [tileTop, tileBottom], 4.5);
   return {
-    background,
+    background: base,
     backgroundTint: tint,
     dark,
     foreground,
@@ -601,7 +603,20 @@ function cleanSocialImageText(
   }
   if (dropped.length > 0) removals.push({ field, reason: "unsupported", text: dropped.join("") });
   if (removals.length === before) return value;
-  return kept.split("\n").map(tidy).filter((line) => line.length > 0).join("\n");
+  return kept.split("\n").map(tidy).map(withoutDashFragment).filter((line) => line.length > 0).join("\n");
+}
+
+/**
+ * A removal can leave one word stranded after a dash ("fuentes oficiales —
+ * too"). A dash is a clause boundary, so the cut goes before it: the dash and
+ * a trailing fragment of one word are dropped.
+ */
+function withoutDashFragment(line: string): string {
+  const match = /^(.*\S)\s+[–—-]\s+(\S+)$/u.exec(line);
+  if (match === null) return line;
+  const head = match[1] ?? line;
+  const closing = /[.!?]$/u.exec(match[2] ?? "")?.[0] ?? "";
+  return /[.!?]$/u.test(head) ? head : `${head}${closing}`;
 }
 
 type Measure = (text: string) => number;
@@ -694,10 +709,11 @@ function dangling(word: string | undefined): boolean {
  * word ("the", "and"), inside a proper name, or leave one word alone.
  */
 function balanceText(text: string, width: number, measure: Measure): string[] {
-  // Short words and numbers never end a line, as in wrapText; a break
-  // inside a two-word name is allowed but costs as much as a dangling word.
-  const words = layoutUnits(text, "short");
-  const wordCount = text.split(/\s+/u).filter((word) => word.length > 0).length;
+  // Every word boundary is a candidate. Short words never end a line, as in
+  // wrapText; a number or a break inside a two-word name may, at a cost
+  // lower than leaving one word alone on the last line.
+  const words = text.split(/\s+/u).filter((word) => word.length > 0);
+  const wordCount = words.length;
   const count = greedyLines(words, width, measure).length;
   if (count < 2 || count > 3 || words.length > 60) return wrapText(text, width, measure);
   const widths = new Map<string, number>();
@@ -709,11 +725,13 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
     }
     return value;
   };
-  const penalty = (lastUnit: string | undefined, nextUnit: string | undefined) => {
-    const lastWord = lastUnit?.split(" ").at(-1);
-    const nextWord = nextUnit?.split(" ")[0];
+  const penalty = (lastWord: string | undefined, nextWord: string | undefined) => {
+    const letters = bare(lastWord ?? "");
+    const open = !ENDS_PHRASE.test(lastWord ?? "");
+    if (open && /^\p{Ll}{1,3}$/u.test(letters)) return Number.POSITIVE_INFINITY;
     if (dangling(lastWord)) return 0.6;
-    if (capitalized(lastWord) && capitalized(nextWord) && !ENDS_PHRASE.test(lastWord ?? "")) return 1;
+    if (open && capitalized(lastWord) && capitalized(nextWord)) return 0.8;
+    if (open && /^\p{N}/u.test(letters)) return 0.2;
     return /[,;:.!?]$/u.test(lastWord ?? "") ? -0.02 : 0;
   };
   let best: { cost: number; lines: string[] } | undefined;
@@ -735,6 +753,7 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
     const lengths = lines.map(size);
     const longest = Math.max(...lengths);
     for (const length of lengths) cost += ((longest - length) / width) ** 2;
+    if (!Number.isFinite(cost)) return;
     if (best === undefined || cost < best.cost) best = { cost, lines };
   };
   for (let first = 1; first < words.length; first += 1) {
@@ -814,9 +833,9 @@ function boundaryCuts(text: string): { clause: string[]; sentence: string[] } {
     if (/^(?:e\.g|i\.e|etc|vs|v\d[\w.]*|mr|ms|dr|no)\.$/iu.test(words[words.length - 1] ?? "")) continue;
     sentence.push(text.slice(0, end).trim());
   }
-  for (const match of text.matchAll(/[,;:](?=\s)|\s[–—-]\s|\s\(/gu)) {
+  for (const match of text.matchAll(/[,;:](?=\s)|\s[–—-]\s|\s\(|\s(?=(?:and|but|while|so|yet|which|where)\s)/gu)) {
     const index = match.index;
-    if (match[0] === ",") {
+    if (match[0] === "," || /^\s$/u.test(match[0])) {
       // A comma inside a list ("the score, setup, and main limit") is not a
       // clause end: cutting there leaves half a list. Only the first comma
       // of a sentence counts as a clause boundary.
@@ -1622,8 +1641,8 @@ function lines({ color: textColor, text, style }: {
 function fieldBackground(palette: SocialImagePalette, x: string, y: string): string {
   const glow = palette.dark ? 0.3 : 0.16;
   return [
-    `radial-gradient(circle at ${x} ${y}, ${rgba(palette.tileTop, glow)} 0%, ${rgba(palette.tileTop, 0)} 42%)`,
-    `linear-gradient(155deg, ${palette.background} 0%, ${palette.background} 38%, ${palette.backgroundTint} 100%)`,
+    `radial-gradient(circle at ${x} ${y}, ${rgba(palette.wash, glow)} 0%, ${rgba(palette.wash, 0)} 42%)`,
+    `linear-gradient(155deg, ${palette.background} 0%, ${palette.backgroundTint} 100%)`,
   ].join(", ");
 }
 
@@ -1697,6 +1716,8 @@ function eyebrowKicker(copy: Copy, shown: readonly string[]): string | undefined
 }
 
 const PRODUCT = {
+  description: [40, 38, 36],
+  descriptionSmall: [34, 32, 30],
   gap: 60,
   maxGroup: 510,
   pad: 72,
@@ -1730,17 +1751,18 @@ function productCard(
   let description: FitBlock | undefined;
   if (copy.description.length > 0) {
     const fitsBudget = (candidate: TextBlock) => blockHeight(candidate) <= descBudget;
-    const two = [40, 38, 36, 34, 32, 30];
-    const three = [36, 34, 32];
-    description = fitDescription(fonts, copy.description, column, two, 2, fitsBudget, false)
-      ?? fitDescription(fonts, copy.description, column, three, 3, fitsBudget, false)
-      ?? fitDescription(fonts, copy.description, column, two, 2, fitsBudget, true)
-      ?? fitDescription(fonts, copy.description, column, three, 3, fitsBudget, true)
+    // A product description keeps the standard sizes and at most two
+    // lines: a long one is cut at a sentence or clause before it shrinks,
+    // so every product card reads at the same scale.
+    description = fitDescription(fonts, copy.description, column, PRODUCT.description, 2, fitsBudget, false)
+      ?? fitDescription(fonts, copy.description, column, PRODUCT.description, 2, fitsBudget, true)
+      ?? fitDescription(fonts, copy.description, column, PRODUCT.descriptionSmall, 2, fitsBudget, false)
+      ?? fitDescription(fonts, copy.description, column, PRODUCT.descriptionSmall, 2, fitsBudget, true)
       ?? clampDescription(
         fonts,
         copy.description,
         column,
-        Math.max(1, Math.min(3, Math.floor(descBudget / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)))),
+        Math.max(1, Math.min(2, Math.floor(descBudget / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)))),
       );
   }
 
