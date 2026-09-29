@@ -96,25 +96,26 @@ const manifest = JSON.parse(
   dependencies?: unknown;
   exports?: unknown;
   peerDependencies?: unknown;
+  peerDependenciesMeta?: unknown;
 };
 const expectedExports = {
   ".": {
-    types: "./src/index.ts",
+    types: "./dist/index.d.ts",
     import: "./dist/index.js",
     default: "./dist/index.js",
   },
   "./json-ld": {
-    types: "./src/json-ld.tsx",
+    types: "./dist/json-ld.d.ts",
     import: "./dist/json-ld.js",
     default: "./dist/json-ld.js",
   },
   "./social-image": {
-    types: "./src/social-image.tsx",
+    types: "./dist/social-image.d.ts",
     import: "./dist/social-image.js",
     default: "./dist/social-image.js",
   },
   "./social-image/card": {
-    types: "./src/social-image-card.tsx",
+    types: "./dist/social-image-card.d.ts",
     import: "./dist/social-image-card.js",
     default: "./dist/social-image-card.js",
   },
@@ -127,6 +128,13 @@ if (JSON.stringify(manifest.peerDependencies) !== JSON.stringify({
   react: ">=19.0.0 <20.0.0",
 })) {
   throw new Error("package must declare only the supported Next.js and React peers");
+}
+// Next.js is optional: the root and card exports work without it, and
+// consumers that only use them should not install it.
+if (JSON.stringify(manifest.peerDependenciesMeta) !== JSON.stringify({
+  next: { optional: true },
+})) {
+  throw new Error("package must mark only the Next.js peer optional");
 }
 if (JSON.stringify(manifest.dependencies) !== JSON.stringify({
   "@hraness/design-kit": "github:hraness/design-kit#v0.5.0",

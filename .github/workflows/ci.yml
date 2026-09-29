@@ -9,8 +9,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # PR runs cancel superseded pushes; main runs are keyed by SHA and never cancel.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -37,13 +38,13 @@ jobs:
           fi
       - run: bun pm pack --dry-run --ignore-scripts
       - name: Verify every runtime export with Node
-        run: node --input-type=module -e 'await Promise.all(["@hraness/web-discovery", "@hraness/web-discovery/json-ld", "@hraness/web-discovery/social-image"].map((specifier) => import(specifier)))'
+        run: node --input-type=module -e 'await Promise.all(["@hraness/web-discovery", "@hraness/web-discovery/json-ld", "@hraness/web-discovery/social-image", "@hraness/web-discovery/social-image/card"].map((specifier) => import(specifier)))'
 
   required:
     name: Required
     if: always()
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - name: Require every blocking job

@@ -26,28 +26,28 @@
   ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./json-ld": {
-      "types": "./src/json-ld.tsx",
+      "types": "./dist/json-ld.d.ts",
       "import": "./dist/json-ld.js",
       "default": "./dist/json-ld.js"
     },
     "./social-image": {
-      "types": "./src/social-image.tsx",
+      "types": "./dist/social-image.d.ts",
       "import": "./dist/social-image.js",
       "default": "./dist/social-image.js"
     },
     "./social-image/card": {
-      "types": "./src/social-image-card.tsx",
+      "types": "./dist/social-image-card.d.ts",
       "import": "./dist/social-image-card.js",
       "default": "./dist/social-image-card.js"
     }
   },
   "main": "./dist/index.js",
-  "types": "./src/index.ts",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "src/discovery.ts",
@@ -78,6 +78,11 @@
   "peerDependencies": {
     "next": ">=16.2.0 <17.0.0",
     "react": ">=19.0.0 <20.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@hraness/design-kit": "github:hraness/design-kit#v0.5.0"

@@ -50,3 +50,15 @@ for (const { entrypoint, output } of [
     );
   }
 }
+
+// Ship compiled declarations so consumers that do not install the optional
+// `next` peer still typecheck: under `skipLibCheck`, an unresolved `next`
+// import inside a `.d.ts` degrades to `any`, while the same import in a `.ts`
+// source export is a hard error.
+const declarations = Bun.spawn(
+  [process.execPath, "x", "tsc", "-p", "./tsconfig.build.json"],
+  { stderr: "inherit", stdout: "inherit" },
+);
+if ((await declarations.exited) !== 0) {
+  throw new Error("tsc failed to emit @hraness/web-discovery declarations");
+}
