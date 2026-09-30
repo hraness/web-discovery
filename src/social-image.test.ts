@@ -1047,15 +1047,16 @@ describe("v0.13.1 headline widows and home-card taglines", () => {
         if (lines.length > 1) expect(lines.at(-1)?.includes(" "), `${headline} → ${JSON.stringify(lines)}`).toBe(true);
       }
     }
-    // Lowercase prose with binding words: a lone last word always loses.
-    const word = fc.constantFrom("and", "the", "from", "every", "where", "claim", "comes", "thinks", "someone", "memory", "sessions", "research", "it", "of");
-    fc.assert(fc.property(fc.array(word, { minLength: 5, maxLength: 12 }), (words) => {
+    // Lowercase words that may end any line, so moving one more word down is
+    // always a valid break: a lone last word always loses to it.
+    const word = fc.constantFrom("where", "claim", "comes", "thinks", "someone", "memory", "sessions", "research", "trade", "rules");
+    fc.assert(fc.property(fc.array(word, { minLength: 4, maxLength: 14 }), (words) => {
       const text = `${words.join(" ")}.`;
       for (const make of [hero, page]) {
         const lines = socialImageFit(make(text)).headline.lines;
         if (lines.length > 1 && !lines.some((line) => line.endsWith("…"))) expect(lines.at(-1)?.includes(" ")).toBe(true);
       }
-    }), { numRuns: 80 });
+    }), { numRuns: 300 });
   });
 
   test("keeps the tagline under a home card's hero headline without a finding", () => {
