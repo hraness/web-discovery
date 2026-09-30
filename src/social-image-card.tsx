@@ -56,7 +56,23 @@ export type SocialImageLayout = "page" | "product";
 export type SocialImageDetails = Readonly<{
   description: string;
   domain: string;
+  /**
+   * The small label above a page headline, such as "Guide" or "Comparison".
+   * An empty string means the page has none on purpose; leaving it out on a
+   * page card is reported by `socialImageFit`.
+   */
   eyebrow?: string;
+  /**
+   * Multi-word names a line must not break inside, such as "Claude Code
+   * Router". Matching ignores case. A no-break space (U+00A0) in the copy
+   * does the same for one occurrence.
+   */
+  keepTogether?: readonly string[];
+  /**
+   * The site's own tagline, so `socialImageFit` can report a page card whose
+   * subtitle only repeats it. `socialImageSiteDetails` sets it.
+   */
+  tagline?: string;
   /**
    * The large text on the card. Defaults to `title` without a trailing brand
    * segment such as " | Example" when that segment repeats the eyebrow or the
@@ -247,6 +263,44 @@ export function socialImagePalette(
     tileTop,
     wash,
   };
+}
+
+/** CIE L*a*b* of a six-digit hex color under D65. */
+function lab(hex: string): readonly [number, number, number] {
+  const linear = (value: number) => {
+    const scaled = value / 255;
+    return scaled <= 0.040_45 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  const [red, green, blue] = channels(hex).map(linear) as unknown as Rgb;
+  const x = (0.412_456_4 * red + 0.357_576_1 * green + 0.180_437_5 * blue) / 0.950_47;
+  const y = 0.212_672_9 * red + 0.715_152_2 * green + 0.072_175 * blue;
+  const z = (0.019_333_9 * red + 0.119_192 * green + 0.950_304_1 * blue) / 1.088_83;
+  const f = (value: number) => (value > 216 / 24_389 ? Math.cbrt(value) : (24_389 / 27 * value + 16) / 116);
+  return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+
+/** CIE76 color difference: about 2.3 is just noticeable. */
+function deltaE(first: string, second: string): number {
+  const a = lab(first);
+  const b = lab(second);
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+/**
+ * The smallest `socialImagePaletteDistance` at which two sites' cards read as
+ * different sites in a feed of thumbnails: about twice a just-noticeable
+ * difference. Washes 30 degrees of hue apart on one base clear it.
+ */
+export const SOCIAL_IMAGE_MIN_PALETTE_DISTANCE = 5;
+
+/**
+ * How far apart two resolved card palettes look: the mean CIE76 ΔE of the
+ * background base and its washed far corner, the colors that fill a
+ * thumbnail. Below `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE` two sites' cards read
+ * as one site; give one of them a different `theme.wash`.
+ */
+export function socialImagePaletteDistance(first: SocialImagePalette, second: SocialImagePalette): number {
+  return (deltaE(first.background, second.background) + deltaE(first.backgroundTint, second.backgroundTint)) / 2;
 }
 
 function parseSocialImageTheme(theme: unknown): SocialImageTheme {
@@ -546,9 +600,14 @@ export type SocialImageRemoval = Readonly<{
 
 /**
  * Bracketed placeholders left in by drafts and CMS defaults. They are removed
- * wherever they appear; a field that holds nothing else counts as empty.
+ * wherever they appear; a field that holds nothing else counts as empty. Only
+ * words that never name real work are listed, so a title such as "[untitled]"
+ * survives. A backslash keeps any bracketed text: "\[DRAFT]" draws "[DRAFT]".
  */
-const PLACEHOLDER = /\[\s*(?:draft|wip|untitled|todo|tbd|tk|placeholder|fixme|no title|title|description|headline|coming soon|preview|lorem ipsum)\s*\]/giu;
+const PLACEHOLDER = /(\\?)(\[\s*(?:draft|wip|todo|tbd|tk|placeholder|fixme|no title|title|description|headline|coming soon|preview|lorem ipsum)\s*\])/giu;
+
+/** A backslash before a bracket asks the card to draw the bracket as written. */
+const ESCAPED_BRACKET = /\\\[/gu;
 
 // Emoji sequences and their joiners, selectors, skin tones, tags, and keycaps.
 const EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200D|\uFE0E|\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|[\u{E0020}-\u{E007F}])+/gu;
@@ -582,8 +641,9 @@ function cleanSocialImageText(
   removals: SocialImageRemoval[],
 ): string {
   const before = removals.length;
-  let text = value.replace(PLACEHOLDER, (match) => {
-    removals.push({ field, reason: "placeholder", text: match });
+  let text = value.replace(PLACEHOLDER, (match, escape: string, placeholder: string) => {
+    if (escape.length > 0) return match;
+    removals.push({ field, reason: "placeholder", text: placeholder });
     return " ";
   });
   const dropped: string[] = [];
@@ -602,8 +662,84 @@ function cleanSocialImageText(
     }
   }
   if (dropped.length > 0) removals.push({ field, reason: "unsupported", text: dropped.join("") });
-  if (removals.length === before) return value;
-  return kept.split("\n").map(tidy).map(withoutDashFragment).filter((line) => line.length > 0).join("\n");
+  if (removals.length === before) return value.replace(ESCAPED_BRACKET, "[");
+  return kept.split("\n").map(tidy).map(withoutDashFragment).filter((line) => line.length > 0).join("\n")
+    .replace(ESCAPED_BRACKET, "[");
+}
+
+/* ------------------------------------------------------------- typography */
+
+/** Characters that mark a token as a URL, path, or code rather than prose. */
+const CODE_LIKE = /:\/\/|[/\\`=<>{}@#$%^*_|~]|^[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+$/u;
+const OPENS = /[\s([{“‘"'—–-]/u;
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+function curlToken(token: string): string {
+  let result = "";
+  const characters = Array.from(token);
+  for (const [index, character] of characters.entries()) {
+    const previous = characters[index - 1] ?? " ";
+    const next = characters[index + 1] ?? " ";
+    const opening = OPENS.test(previous) && !/\s/u.test(next);
+    if (character === "\"") {
+      result += opening ? "“" : "”";
+    } else if (character === "'") {
+      if (WORD_CHARACTER.test(previous) && WORD_CHARACTER.test(next)) result += "’";
+      // An elided year or word ("’90s", "’til") takes an apostrophe, not an opening quote.
+      else if (opening && /^'(?:\d\d(?:s\b|$)|til\b|tis\b|em\b|n\b)/iu.test(characters.slice(index).join(""))) result += "’";
+      else result += opening ? "‘" : "’";
+    } else {
+      result += character;
+    }
+  }
+  // A range of two ascending numbers takes an en dash: "10-20", "2020-2024".
+  // Digit counts within one of each other, and never 3 then 4 digits, so a
+  // phone fragment such as "555-1234" keeps its hyphen.
+  return result.replace(/^([(“‘]*)([1-9]\d{0,3}|0)-([1-9]\d{0,3})(?=[)\].,;:!?”’]*$)/u, (match, lead: string, from: string, to: string) => {
+    const ascending = Number(from) < Number(to);
+    const lengths = Math.abs(from.length - to.length) <= 1 && !(from.length === 3 && to.length === 4);
+    return ascending && lengths ? `${lead}${from}–${to}` : match;
+  });
+}
+
+/**
+ * Sets straight quotes as curly quotes (’ ‘ “ ”) and a hyphen between two
+ * ascending numbers as an en dash. Contractions and possessives ("Lovelace's",
+ * "ALGAL's") take ’. URLs, domains, paths, and code-like tokens, and text in
+ * backticks, stay as written.
+ */
+export function socialImageTypography(text: string): string {
+  return text
+    .split(/(`[^`]*`)/u)
+    .map((part, index) => index % 2 === 1
+      ? part
+      : part.replace(/\S+/gu, (token) => {
+        const core = token.replace(/^["'“‘(]+|["'”’).,;:!?]+$/gu, "");
+        return CODE_LIKE.test(core) ? token : curlToken(token);
+      }))
+    .join("");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/**
+ * Joins the words of each phrase in `keepTogether` with no-break spaces so a
+ * line never breaks inside it. Matching ignores case and quote style.
+ */
+function bindPhrases(text: string, keepTogether: readonly string[]): string {
+  let result = text;
+  for (const phrase of keepTogether) {
+    const words = socialImageTypography(phrase).split(/\s+/u).filter((word) => word.length > 0);
+    if (words.length < 2) continue;
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}])${words.map(escapeRegExp).join("[^\\S\\n]+")}(?![\\p{L}\\p{N}])`,
+      "giu",
+    );
+    result = result.replace(pattern, (match) => match.replace(/[^\S\n]+/gu, "\u00A0"));
+  }
+  return result;
 }
 
 /**
@@ -621,6 +757,9 @@ function withoutDashFragment(line: string): string {
 
 type Measure = (text: string) => number;
 
+/** Where a line may break: any white space except a no-break space. */
+const BREAKS = /[^\S\u00A0]+/u;
+
 /** How tightly `layoutUnits` binds words: "names" also keeps proper names whole. */
 type Binding = "names" | "short";
 
@@ -636,7 +775,7 @@ function capitalized(word: string | undefined): boolean {
  * on one line. A bound group wider than a line still breaks.
  */
 function layoutUnits(text: string, binding: Binding = "names"): string[] {
-  const words = text.split(/\s+/u).filter((word) => word.length > 0);
+  const words = text.split(BREAKS).filter((word) => word.length > 0);
   const units: string[] = [];
   let carry: string[] = [];
   let run = 0;
@@ -672,12 +811,13 @@ function greedyLines(units: readonly string[], width: number, measure: Measure):
       continue;
     }
     if (line.length > 0) lines.push(line);
-    if (measure(unit) <= width || !unit.includes(" ")) {
+    if (measure(unit) <= width || !/[ \u00A0]/u.test(unit)) {
       line = unit;
       continue;
     }
-    // A bound group wider than the line breaks back into single words.
-    const split = greedyLines(unit.split(" "), width, measure);
+    // A bound group or kept-together phrase wider than the line breaks back
+    // into single words.
+    const split = greedyLines(unit.split(/[ \u00A0]/u), width, measure);
     line = split.pop() ?? "";
     lines.push(...split);
   }
@@ -703,16 +843,42 @@ function dangling(word: string | undefined): boolean {
   return word !== undefined && !ENDS_PHRASE.test(word) && BINDING_WORDS.has(bare(word));
 }
 
+const ARTICLES = new Set(["a", "an", "the"]);
+
+/** Break costs, in units of a line's squared share of empty width. */
+const BREAK_COST = {
+  /** Ending a two-word first line on a short word such as "vs" or "on". */
+  shortWord: 0.7,
+  /** A line break inside a run of two capitalized words. */
+  name: 0.8,
+  /** A line break inside a run of three or more, such as "Claude Code Router". */
+  longName: 1.2,
+  /** One word alone on the first line of three or more words ("Notes / on the…"). */
+  loneFirst: 1.5,
+  /** One word alone on a middle line. */
+  loneMiddle: 0.2,
+  /** One word alone on the last line. */
+  widow: 0.5,
+} as const;
+
+/** How many capitalized words run through the boundary after `index`. */
+function capitalRun(words: readonly string[], index: number): number {
+  let run = 0;
+  for (let at = index; at >= 0 && capitalized(words[at]); at -= 1) run += 1;
+  for (let at = index + 1; at < words.length && capitalized(words[at]); at += 1) run += 1;
+  return run;
+}
+
 /**
  * Chooses where to break `text` into the fewest lines that fit, scoring every
- * candidate: lines of even length win, and a line may not end on a binding
- * word ("the", "and"), inside a proper name, or leave one word alone.
+ * candidate: lines of even length win, and a line should not end on a short
+ * or binding word ("vs", "the"), break inside a proper name, or leave one word
+ * alone. Words joined by a no-break space never split.
  */
 function balanceText(text: string, width: number, measure: Measure): string[] {
-  // Every word boundary is a candidate. Short words never end a line, as in
-  // wrapText; a number or a break inside a two-word name may, at a cost
-  // lower than leaving one word alone on the last line.
-  const words = text.split(/\s+/u).filter((word) => word.length > 0);
+  // Every word boundary is a candidate, each with a cost; see `penalty` for
+  // the one place a short word may end a line.
+  const words = text.split(BREAKS).filter((word) => word.length > 0);
   const wordCount = words.length;
   const count = greedyLines(words, width, measure).length;
   if (count < 2 || count > 3 || words.length > 60) return wrapText(text, width, measure);
@@ -725,13 +891,27 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
     }
     return value;
   };
-  const penalty = (lastWord: string | undefined, nextWord: string | undefined) => {
+  // `leadIn` is true for a first line of exactly two words, the one place a
+  // short word other than an article may end a line: "Wordcell vs /
+  // Supermemory" reads better than "Wordcell / vs Supermemory". Everywhere
+  // else a short word never ends one, and an article never does.
+  const penalty = (index: number, leadIn: boolean) => {
+    const lastWord = words[index];
     const letters = bare(lastWord ?? "");
     const open = !ENDS_PHRASE.test(lastWord ?? "");
-    if (open && /^\p{Ll}{1,3}$/u.test(letters)) return Number.POSITIVE_INFINITY;
+    if (open && /^\p{Ll}{1,3}$/u.test(letters)) {
+      return leadIn && !ARTICLES.has(letters.toLocaleLowerCase("en-US")) ? BREAK_COST.shortWord : Number.POSITIVE_INFINITY;
+    }
     if (dangling(lastWord)) return 0.6;
-    if (open && capitalized(lastWord) && capitalized(nextWord)) return 0.8;
-    if (open && /^\p{N}/u.test(letters)) return 0.2;
+    if (open && capitalized(lastWord) && capitalized(words[index + 1])) {
+      return capitalRun(words, index) >= 3 ? BREAK_COST.longName : BREAK_COST.name;
+    }
+    // A number binds to the lowercase unit or noun after it ("2 / million"
+    // never splits) but may close a name ("Ley 60 / en Puerto Rico").
+    if (open && /^\p{N}/u.test(letters)) {
+      const closesName = /^\p{Lu}/u.test(words[index - 1] ?? "");
+      return closesName || !/^\p{Ll}/u.test(words[index + 1] ?? "") ? 0.2 : Number.POSITIVE_INFINITY;
+    }
     return /[,;:.!?]$/u.test(lastWord ?? "") ? -0.02 : 0;
   };
   let best: { cost: number; lines: string[] } | undefined;
@@ -745,10 +925,14 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
       const line = words.slice(from, to).join(" ");
       if (size(line) > width) return;
       lines.push(line);
-      if (index < bounds.length - 2) cost += penalty(words[to - 1], words[to]);
-      // A lone word is an orphan; one left on the last line (a widow) reads
-      // worst, so it costs more than a short lead-in line.
-      if (!line.includes(" ") && wordCount >= 4) cost += index === bounds.length - 2 ? 0.5 : 0.2;
+      if (index < bounds.length - 2) cost += penalty(to - 1, index === 0 && to === 2);
+      // A lone word is an orphan. On the first line it reads as a label cut
+      // off from its phrase ("Notes / on the Analytical Engine"), so it costs
+      // most; one left on the last line (a widow) costs more than a middle one.
+      if (!/[ \u00A0]/u.test(line)) {
+        if (index === 0 && wordCount >= 3) cost += BREAK_COST.loneFirst;
+        else if (wordCount >= 4) cost += index === bounds.length - 2 ? BREAK_COST.widow : BREAK_COST.loneMiddle;
+      }
     }
     const lengths = lines.map(size);
     const longest = Math.max(...lengths);
@@ -790,7 +974,7 @@ function clampWith(
   const fit = (line: string) => (measure(line) <= width ? line : truncateWord(line, width, measure));
   const wrapped = wrapText(text, width, measure, binding);
   if (wrapped.length <= maxLines) return wrapped.map(fit);
-  const words = text.split(/\s+/u).filter((word) => word.length > 0);
+  const words = text.split(BREAKS).filter((word) => word.length > 0);
   const head = wrapped.slice(0, maxLines - 1);
   const used = head.join(" ").split(" ").filter((word) => word.length > 0).length;
   const rest = words.slice(used);
@@ -879,11 +1063,13 @@ function block(
   size: number,
   style: TextStyle,
 ): TextBlock {
+  // No-break spaces only steer line breaking; the card draws plain spaces.
+  const drawn = lines.map((line) => line.replaceAll("\u00A0", " "));
   return {
-    lines,
+    lines: drawn,
     size,
     style,
-    widths: lines.map((line) => textWidth(fonts, line, size, style)),
+    widths: drawn.map((line) => textWidth(fonts, line, size, style)),
   };
 }
 
@@ -908,11 +1094,17 @@ function fitWhole(
   style: TextStyle,
 ): TextBlock | null {
   const usable = Math.floor(width * SAFETY);
+  // A size at which a kept-together phrase must split is not a fit.
+  const groups = text.split(BREAKS).filter((word) => word.includes("\u00A0"));
   for (const size of sizes) {
     const measure = measurer(fonts, size, style);
-    const lines = wrapText(text, usable, measure);
+    if (groups.some((group) => measure(group) > usable)) continue;
+    // The balanced break can fit where binding every short word cannot:
+    // "Why I still use Arc / on desktop, and why" is two lines, while the
+    // bound unit "use Arc on desktop," forces three.
+    const lines = balanceText(text, usable, measure);
     if (lines.length <= maxLines && lines.every((line) => measure(line) <= usable)) {
-      return block(fonts, balanceText(text, usable, measure), size, style);
+      return block(fonts, lines, size, style);
     }
   }
   return null;
@@ -1703,16 +1895,81 @@ function sectionKey(word: string): string {
 function eyebrowKicker(copy: Copy, shown: readonly string[]): string | undefined {
   const eyebrow = copy.eyebrow?.trim();
   if (eyebrow === undefined || eyebrow.length === 0) return undefined;
-  const words = (value: string) => brandKey(value).split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0);
-  const key = words(eyebrow);
-  if (key.length === 0) return undefined;
-  for (const text of shown) {
-    const other = words(text);
-    if (other.length >= key.length && key.every((word, index) => other[index] === word)) return undefined;
+  return eyebrowRepeats(eyebrow, copy.headline, shown) === undefined ? eyebrow : undefined;
+}
+
+function keyWords(value: string): string[] {
+  return brandKey(value).split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0);
+}
+
+/**
+ * Which shown line an eyebrow repeats: "headline" when it opens the headline
+ * or names the same section as its first word, "other" when it opens the
+ * lockup or domain, else undefined.
+ */
+function eyebrowRepeats(
+  eyebrow: string,
+  headline: string,
+  others: readonly string[],
+): "headline" | "other" | undefined {
+  const key = keyWords(eyebrow);
+  if (key.length === 0) return "other";
+  const opens = (text: string) => {
+    const other = keyWords(text);
+    return other.length >= key.length && key.every((word, index) => other[index] === word);
+  };
+  const first = keyWords(headline)[0];
+  if (opens(headline)) return "headline";
+  if (key.length === 1 && first !== undefined && sectionKey(key[0] ?? "") === sectionKey(first)) return "headline";
+  return others.some(opens) ? "other" : undefined;
+}
+
+/** Route sections whose label is not the segment itself. */
+const SECTION_LABELS: Readonly<Record<string, string>> = {
+  benchmark: "Benchmarks",
+  benchmarks: "Benchmarks",
+  blog: "Blog",
+  changelog: "Release",
+  compare: "Comparison",
+  comparison: "Comparison",
+  comparisons: "Comparison",
+  doc: "Documentation",
+  docs: "Documentation",
+  documentation: "Documentation",
+  guide: "Guide",
+  guides: "Guide",
+  integration: "Integration",
+  integrations: "Integration",
+  news: "News",
+  post: "Blog",
+  posts: "Blog",
+  release: "Release",
+  releases: "Release",
+  vs: "Comparison",
+};
+
+/**
+ * The default eyebrow for a page at `path`: its first route segment as a
+ * section label ("/docs/setup" gives "Documentation", "/compare/x" gives
+ * "Comparison", "/use-cases" gives "Use cases"). The home page and paths
+ * without a readable segment get none.
+ */
+export function socialImageEyebrow(path: string): string | undefined {
+  const segment = path.replace(/[?#].*$/u, "").split("/").find((part) => part.length > 0);
+  if (segment === undefined) return undefined;
+  let decoded = segment;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    return undefined;
   }
-  const first = words(copy.headline)[0];
-  if (key.length === 1 && first !== undefined && sectionKey(key[0] ?? "") === sectionKey(first)) return undefined;
-  return eyebrow;
+  const key = decoded.toLocaleLowerCase("en-US");
+  const label = SECTION_LABELS[key];
+  if (label !== undefined) return label;
+  const words = key.replace(/\.[a-z0-9]+$/u, "").split(/[-_\s]+/u).filter((word) => word.length > 0);
+  if (words.length === 0 || !words.every((word) => /^\p{L}[\p{L}\p{N}]*$/u.test(word))) return undefined;
+  const text = words.join(" ");
+  return `${text.charAt(0).toLocaleUpperCase("en-US")}${text.slice(1)}`;
 }
 
 const PRODUCT = {
@@ -2032,8 +2289,13 @@ export function createSocialImageElement(
   return createSocialImageCard(details).element;
 }
 
+/** Reported lines use plain spaces; the no-break spaces only steer layout. */
+function plainSpaces(line: string): string {
+  return line.replace(/\u00A0/gu, " ");
+}
+
 function oneLine(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  return value.replace(/[^\S\u00A0]+/gu, " ").trim();
 }
 
 /** Where each text line and the page-layout ghost land, in card pixels. */
@@ -2061,6 +2323,11 @@ export type SocialImageFit = Readonly<{
      */
     cut: "clause" | "ellipsis" | "none" | "sentence";
     lines: readonly string[];
+    /**
+     * True when the description is set below its layout's standard size
+     * (36px) to fit. Shorten the copy so every card reads at one scale.
+     */
+    reduced: boolean;
     size: number;
   }> | undefined;
   /** The eyebrow as drawn, or undefined when it was empty or repeated the headline. */
@@ -2078,6 +2345,11 @@ export type SocialImageFit = Readonly<{
     threeLine: boolean;
     truncated: boolean;
   }>;
+  /**
+   * The same findings as `issues`, each with a stable code for tests that
+   * allow some and reject others.
+   */
+  findings: readonly SocialImageFinding[];
   /** Human-readable findings; empty when the copy fits as written. */
   issues: readonly string[];
   layout: SocialImageLayout;
@@ -2085,24 +2357,92 @@ export type SocialImageFit = Readonly<{
   removed: readonly SocialImageRemoval[];
 }>;
 
+/** Stable identifiers for the findings `socialImageFit` reports. */
+export type SocialImageFindingCode =
+  | "description-clamped"
+  | "description-reduced"
+  | "description-repeats-tagline"
+  | "description-shortened"
+  | "description-trailing-ellipsis"
+  | "eyebrow-missing"
+  | "eyebrow-repeats-headline"
+  | "headline-clamped"
+  | "headline-reduced"
+  | "headline-three-lines"
+  | "placeholder"
+  | "unsupported-characters";
+
+export type SocialImageFinding = Readonly<{
+  code: SocialImageFindingCode;
+  message: string;
+}>;
+
+/** Copy findings that depend on the source text rather than the fitted layout. */
+type CopyFindings = Readonly<{
+  eyebrowMissing: boolean;
+  eyebrowRepeatsHeadline: boolean;
+  repeatsTagline: boolean;
+  trailingEllipsis: boolean;
+}>;
+
 type RenderedCard = SocialImageCard & { fit: SocialImageFit; ghost?: Box; textBoxes: readonly Box[] };
 
-function fitIssues(fit: Omit<SocialImageFit, "issues">): string[] {
-  const issues: string[] = [];
+/**
+ * Findings `strict` throws on: copy that the card had to change to fit.
+ * Review findings added later (a reduced description size, a missing or
+ * repeated eyebrow, a repeated tagline, a trailing ellipsis) are reported by
+ * `socialImageFit` only, so upgrading never breaks a strict build.
+ */
+const STRICT_CODES: ReadonlySet<SocialImageFindingCode> = new Set([
+  "description-clamped",
+  "description-shortened",
+  "headline-clamped",
+  "headline-reduced",
+  "headline-three-lines",
+  "placeholder",
+  "unsupported-characters",
+]);
+
+/** The description size every layout treats as standard. */
+const STANDARD_DESCRIPTION_SIZE = 36;
+
+function fitFindings(
+  fit: Omit<SocialImageFit, "findings" | "issues">,
+  copy: CopyFindings,
+): SocialImageFinding[] {
+  const findings: SocialImageFinding[] = [];
+  const add = (code: SocialImageFindingCode, message: string) => findings.push({ code, message });
   for (const removal of fit.removed) {
-    issues.push(removal.reason === "placeholder"
-      ? `${removal.field} contains the placeholder ${JSON.stringify(removal.text)}`
-      : `${removal.field} contains ${JSON.stringify(removal.text)}, which the embedded Nebula Sans fonts cannot draw`);
+    if (removal.reason === "placeholder") {
+      add("placeholder", `${removal.field} contains the placeholder ${JSON.stringify(removal.text)}`);
+    } else {
+      add("unsupported-characters", `${removal.field} contains ${JSON.stringify(removal.text)}, which the embedded Nebula Sans fonts cannot draw`);
+    }
   }
-  if (fit.headline.truncated) issues.push("headline does not fit and was clamped with an ellipsis");
-  else if (fit.headline.threeLine) issues.push(`headline needs three lines, so it is set at ${String(fit.headline.size)}px`);
-  else if (fit.headline.reduced) issues.push(`headline does not fit two lines at the standard size, so it is set at ${String(fit.headline.size)}px`);
+  if (fit.headline.truncated) add("headline-clamped", "headline does not fit and was clamped with an ellipsis");
+  else if (fit.headline.threeLine) add("headline-three-lines", `headline needs three lines, so it is set at ${String(fit.headline.size)}px`);
+  else if (fit.headline.reduced) add("headline-reduced", `headline does not fit two lines at the standard size, so it is set at ${String(fit.headline.size)}px`);
   if (fit.description !== undefined && fit.description.cut !== "none") {
-    issues.push(fit.description.cut === "ellipsis"
-      ? "description does not fit and was clamped with an ellipsis"
-      : `description was shortened to its last whole ${fit.description.cut} that fits`);
+    if (fit.description.cut === "ellipsis") add("description-clamped", "description does not fit and was clamped with an ellipsis");
+    else add("description-shortened", `description was shortened to its last whole ${fit.description.cut} that fits`);
   }
-  return issues;
+  if (fit.description?.reduced === true) {
+    add("description-reduced", `description fits only below the standard ${String(STANDARD_DESCRIPTION_SIZE)}px, so it is set at ${String(fit.description.size)}px; shorten it`);
+  }
+  if (copy.trailingEllipsis) add("description-trailing-ellipsis", "description ends with an ellipsis, as if it was cut before it reached the card");
+  if (copy.repeatsTagline) add("description-repeats-tagline", "description repeats the site tagline; give the page its own description");
+  if (copy.eyebrowMissing) add("eyebrow-missing", "page card has no eyebrow; set one, or pass an empty string to leave it out on purpose");
+  if (copy.eyebrowRepeatsHeadline) add("eyebrow-repeats-headline", "eyebrow repeats the opening of the headline, so it is not drawn");
+  return findings;
+}
+
+/** Text compared without case, spacing, quote style, or closing punctuation. */
+function comparable(value: string): string {
+  return socialImageTypography(value)
+    .replace(/\s+/gu, " ")
+    .replace(/[\s.!?…]+$/u, "")
+    .trim()
+    .toLocaleLowerCase("en-US");
 }
 
 function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
@@ -2111,12 +2451,15 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
   const removed: SocialImageRemoval[] = [];
   const clean = (value: string, field: TextField) =>
     cleanSocialImageText(normalizeSocialImageText(value), field, fonts, removed);
+  const keep = details.keepTogether ?? [];
+  // Prose fields get curly quotes and kept-together names; the domain stays as written.
+  const prose = (value: string, field: TextField) => bindPhrases(socialImageTypography(clean(value, field)), keep);
   const copy = {
-    description: clean(details.description, "description"),
+    description: prose(details.description, "description"),
     domain: clean(details.domain, "domain"),
-    eyebrow: details.eyebrow === undefined ? undefined : clean(details.eyebrow, "eyebrow"),
-    headline: clean(socialImageHeadline(details), details.headline === undefined ? "title" : "headline"),
-    lockup: clean(lockupName(details), "title"),
+    eyebrow: details.eyebrow === undefined ? undefined : prose(details.eyebrow, "eyebrow"),
+    headline: prose(socialImageHeadline(details), details.headline === undefined ? "title" : "headline"),
+    lockup: prose(lockupName(details), "title"),
   };
   // A headline that was only a placeholder falls back to the product name.
   const headline = copy.headline.length > 0 ? copy.headline : copy.lockup;
@@ -2134,13 +2477,18 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
     ? pageCard(flat, art, palette, fonts)
     : productCard(flat, art, palette, fonts);
 
-  const measured: Omit<SocialImageFit, "issues"> = {
+  const measured: Omit<SocialImageFit, "findings" | "issues"> = {
     description: card.fit.description === undefined
       ? undefined
-      : { cut: card.fit.description.cut, lines: card.fit.description.lines, size: card.fit.description.size },
-    eyebrow: card.fit.eyebrow?.lines.join(" "),
+      : {
+        cut: card.fit.description.cut,
+        lines: card.fit.description.lines.map(plainSpaces),
+        reduced: card.fit.description.size < STANDARD_DESCRIPTION_SIZE,
+        size: card.fit.description.size,
+      },
+    eyebrow: card.fit.eyebrow === undefined ? undefined : plainSpaces(card.fit.eyebrow.lines.join(" ")),
     headline: {
-      lines: card.fit.headline.lines,
+      lines: card.fit.headline.lines.map(plainSpaces),
       size: card.fit.headline.size,
       reduced: card.fit.reduced,
       threeLine: card.fit.headline.lines.length >= 3,
@@ -2149,9 +2497,21 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
     layout,
     removed,
   };
-  const fit: SocialImageFit = { ...measured, issues: fitIssues(measured) };
-  if (details.strict === true && fit.issues.length > 0) {
-    throw new RangeError(`social image copy does not fit as written: ${fit.issues.join("; ")}.`);
+  const eyebrowText = flat.eyebrow;
+  const findings = fitFindings(measured, {
+    eyebrowMissing: layout === "page" && details.eyebrow === undefined,
+    eyebrowRepeatsHeadline: eyebrowText !== undefined
+      && eyebrowRepeats(eyebrowText, flat.headline, [flat.lockup, flat.domain]) === "headline",
+    repeatsTagline: details.tagline !== undefined
+      && flat.description.length > 0
+      && comparable(flat.headline) !== comparable(flat.lockup)
+      && comparable(flat.description) === comparable(details.tagline),
+    trailingEllipsis: /(?:\.\.\.|…)$/u.test(flat.description),
+  });
+  const fit: SocialImageFit = { ...measured, findings, issues: findings.map(({ message }) => message) };
+  const blocking = findings.filter(({ code }) => STRICT_CODES.has(code));
+  if (details.strict === true && blocking.length > 0) {
+    throw new RangeError(`social image copy does not fit as written: ${blocking.map(({ message }) => message).join("; ")}.`);
   }
 
   return {
@@ -2204,6 +2564,8 @@ export type SocialImageSite = Readonly<{
   description: string;
   domain: string;
   icon?: SocialImageIcon;
+  /** Names no card on the site may break across lines, such as "Claude Code Router". */
+  keepTogether?: readonly string[];
   mark?: SocialImageDetails["mark"];
   name: string;
   theme?: Partial<SocialImageTheme>;
@@ -2212,9 +2574,15 @@ export type SocialImageSite = Readonly<{
 /** Per-page copy layered over a site. Omit it for the site's home card. */
 export type SocialImagePage = Readonly<{
   description?: string;
-  eyebrow?: string;
+  /**
+   * The label above the headline. When omitted on a page card, it defaults
+   * to `socialImageEyebrow(path)`. `false` leaves the card without one.
+   */
+  eyebrow?: string | false;
   headline?: string;
   layout?: SocialImageLayout;
+  /** The page's route, such as "/docs/setup", used for the default eyebrow. */
+  path?: string;
 }>;
 
 function requiredText(value: unknown, label: string): string {
@@ -2232,8 +2600,58 @@ export function defineSocialImageSite(site: SocialImageSite): SocialImageSite {
   requiredText(site.name, "name");
   requiredText(site.domain, "domain");
   requiredText(site.description, "description");
+  if (site.keepTogether !== undefined && (!Array.isArray(site.keepTogether) || !site.keepTogether.every((phrase) => typeof phrase === "string"))) {
+    throw new TypeError("social image site keepTogether must be an array of strings");
+  }
   const icon = site.icon === undefined ? undefined : parseSocialImageIcon(site.icon);
   return Object.freeze({ ...site, ...(icon === undefined ? {} : { icon }) });
+}
+
+/** The palette every card of `site` draws, including an app icon's wash. */
+export function socialImageSitePalette(site: SocialImageSite): SocialImagePalette {
+  const art = tileArt({ description: site.description, domain: site.domain, title: site.name, ...(site.icon === undefined ? {} : { icon: site.icon }) }, site.name);
+  return socialImagePalette(site.theme ?? {}, art.type === "app" ? art.icon.hue : undefined);
+}
+
+/** Two sites whose cards look alike. */
+export type SocialImageLookAlike = Readonly<{
+  distance: number;
+  first: string;
+  second: string;
+}>;
+
+/**
+ * Every pair of `sites` whose card backgrounds are closer than `minimum`
+ * (CIE76 ΔE, default `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE`), closest first.
+ * Run it over a portfolio's site records in one test to keep every site's
+ * cards distinct in a feed.
+ */
+export function socialImageLookAlikes(
+  sites: readonly SocialImageSite[],
+  minimum: number = SOCIAL_IMAGE_MIN_PALETTE_DISTANCE,
+): SocialImageLookAlike[] {
+  const palettes = sites.map((site) => ({ name: site.name, palette: socialImageSitePalette(site) }));
+  const pairs: SocialImageLookAlike[] = [];
+  for (const [index, first] of palettes.entries()) {
+    for (const second of palettes.slice(index + 1)) {
+      const distance = socialImagePaletteDistance(first.palette, second.palette);
+      if (distance < minimum) pairs.push({ distance, first: first.name, second: second.name });
+    }
+  }
+  return pairs.sort((a, b) => a.distance - b.distance);
+}
+
+/**
+ * The route-derived eyebrow, or "" (none on purpose) when the path has no
+ * section or its label only repeats the headline's opening ("Documentation"
+ * over "Documentation", on a section index page).
+ */
+function defaultEyebrow(path: string, headline: string): string {
+  const label = socialImageEyebrow(path);
+  if (label === undefined) return "";
+  const key = keyWords(label);
+  const said = key.length === 1 && keyWords(headline).some((word) => sectionKey(word) === sectionKey(key[0] ?? ""));
+  return said || eyebrowRepeats(label, headline, []) === "headline" ? "" : label;
 }
 
 export function socialImageSiteDetails(
@@ -2244,12 +2662,17 @@ export function socialImageSiteDetails(
   // description of its own leaves the subtitle empty.
   const pageCard = page.layout === "page"
     || (page.layout === undefined && page.headline !== undefined && page.headline !== site.name);
+  const eyebrow = page.eyebrow === false
+    ? ""
+    : page.eyebrow ?? (pageCard && page.path !== undefined ? defaultEyebrow(page.path, page.headline ?? site.name) : undefined);
   return {
     description: page.description ?? (pageCard ? "" : site.description),
     domain: site.domain,
+    tagline: site.description,
     title: site.name,
-    ...(page.eyebrow === undefined ? {} : { eyebrow: page.eyebrow }),
+    ...(eyebrow === undefined ? {} : { eyebrow }),
     ...(page.headline === undefined ? {} : { headline: page.headline }),
+    ...(site.keepTogether === undefined ? {} : { keepTogether: site.keepTogether }),
     ...(page.layout === undefined ? {} : { layout: page.layout }),
     ...(site.icon === undefined ? {} : { icon: site.icon }),
     ...(site.mark === undefined ? {} : { mark: site.mark }),

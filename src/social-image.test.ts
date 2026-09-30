@@ -50,12 +50,18 @@ const {
   plainSocialImageTheme,
   socialImageAlt,
   socialImageContrastRatio,
+  socialImageEyebrow,
   socialImageFit,
   socialImageHeadline,
   socialImageIconShape,
   socialImageLayout,
+  socialImageLookAlikes,
   socialImageMarks,
+  socialImagePaletteDistance,
   socialImageSiteDetails,
+  socialImageSitePalette,
+  socialImageTypography,
+  SOCIAL_IMAGE_MIN_PALETTE_DISTANCE,
 } = await import("./social-image");
 const { socialImageGeometry, socialImagePalette } = await import("./social-image-card");
 
@@ -380,12 +386,18 @@ describe("shared social images", () => {
       fc.stringMatching(/^[A-Za-z][a-z]{3,8}$/u),
     ).map(([short, long]) => (short === undefined ? long : `${short} ${long}`));
     const bindable = fc.array(phrase, { minLength: 1, maxLength: 12 }).map((parts) => parts.join(" "));
+    // Since v0.12 one exception: a two-word first line may end on a short word
+    // that is not an article, so "Wordcell vs / Supermemory" beats a lone
+    // first word.
+    const articles = new Set(["a", "an", "the"]);
     fc.assert(fc.property(bindable, bindable, (headline, description) => {
       const card = createSocialImageCard({ description, domain: "example.com", headline, title: "Example" });
       for (const block of textBlocks(card.element)) {
-        for (const line of block.lines.slice(0, -1)) {
-          const last = line.split(" ").at(-1) ?? "";
-          expect(/^[a-z]{1,3}$/u.test(last)).toBe(false);
+        for (const [index, line] of block.lines.slice(0, -1).entries()) {
+          const words = line.split(" ");
+          const last = words.at(-1) ?? "";
+          if (!/^[a-z]{1,3}$/u.test(last)) continue;
+          expect(index === 0 && words.length === 2 && !articles.has(last)).toBe(true);
         }
       }
     }), { numRuns: 40 });
@@ -520,6 +532,7 @@ describe("site social image template", () => {
       description: "Compacts long agent sessions into smaller copies",
       domain: "example.com",
       icon: { kind: "mark", src: svgMark },
+      tagline: "Compacts long agent sessions into smaller copies",
       theme: { accent: "#2474D4" },
       title: "Example",
     });
@@ -823,14 +836,172 @@ describe("v0.11 card copy and art rules", () => {
     expect(fit.eyebrow).toBeUndefined();
     expect(fit.removed.filter((removal) => removal.reason === "placeholder").map((removal) => removal.text).sort())
       .toEqual(["[DRAFT]", "[TODO]", "[WIP]"]);
-    const empty = socialImageFit(pageCopy("[DRAFT]", "[untitled]"));
+    const empty = socialImageFit(pageCopy("[DRAFT]", "[TBD]"));
     expect(empty.headline.lines.join(" ")).toBe("Example");
     expect(empty.description).toBeUndefined();
     expect(() => createSocialImageCard({ ...pageCopy("[wip] Notes", ""), strict: true })).toThrow("placeholder");
-    fc.assert(fc.property(fc.constantFrom("[DRAFT]", "[ draft ]", "[untitled]", "[WIP]", "[TBD]"), fc.stringMatching(/^[A-Z][a-z]{3,9}( [a-z]{3,9}){0,4}$/u), (tag, text) => {
+    fc.assert(fc.property(fc.constantFrom("[DRAFT]", "[ draft ]", "[TODO]", "[WIP]", "[TBD]"), fc.stringMatching(/^[A-Z][a-z]{3,9}( [a-z]{3,9}){0,4}$/u), (tag, text) => {
       const result = socialImageFit(pageCopy(`${tag} ${text}`, `${text} ${tag}`, tag));
       expect(result.headline.lines.join(" ")).toBe(text);
       expect(result.eyebrow).toBeUndefined();
+    }), { numRuns: 40 });
+  });
+});
+
+describe("v0.12 typography, breaks, eyebrows, and palettes", () => {
+  const base = { domain: "example.com", title: "Example" } as const;
+  const page = (headline: string, extra: Record<string, unknown> = {}) => ({
+    ...base,
+    description: "",
+    eyebrow: "Guide",
+    headline,
+    layout: "page" as const,
+    ...extra,
+  });
+  const codes = (details: Parameters<typeof socialImageFit>[0]) => socialImageFit(details).findings.map(({ code }) => code);
+
+  test("sets curly quotes, apostrophes, and number ranges in prose only", () => {
+    expect(socialImageTypography(`Lovelace's "Notes"`)).toBe("Lovelace’s “Notes”");
+    expect(socialImageTypography("ALGAL's receipts")).toBe("ALGAL’s receipts");
+    expect(socialImageTypography("'Tis the '90s")).toBe("’Tis the ’90s");
+    expect(socialImageTypography(`it's "a 'nested' one"`)).toBe("it’s “a ‘nested’ one”");
+    expect(socialImageTypography("10-20 pages, 2020-2024")).toBe("10–20 pages, 2020–2024");
+    for (const kept of ["5-3", "555-1234", "https://x.com/a's", "example.com", "src/it's", "`don't`", "a_b's"]) {
+      expect(socialImageTypography(kept)).toBe(kept);
+    }
+    const fit = socialImageFit(page(`Lovelace's "Notes"`, { description: `ALGAL's "receipts"`, eyebrow: "Ada's notes" }));
+    expect(fit.headline.lines.join(" ")).toBe("Lovelace’s “Notes”");
+    expect(fit.description?.lines.join(" ")).toBe("ALGAL’s “receipts”");
+    expect(fit.eyebrow).toBe("Ada’s notes");
+    expect(socialImageFit({ ...page("Docs"), domain: "it's.example.com" }).removed).toEqual([]);
+
+    // Straight quotes never survive in prose words, and nothing else changes.
+    const word = fc.stringMatching(/^[A-Za-z]{1,8}$/u);
+    const quoted = fc.tuple(fc.constantFrom("", "\"", "'"), word, fc.constantFrom("", "'s", "\"", "'")).map(([open, text, close]) => `${open}${text}${close}`);
+    fc.assert(fc.property(fc.array(quoted, { minLength: 1, maxLength: 8 }), (parts) => {
+      const text = parts.join(" ");
+      const result = socialImageTypography(text);
+      expect(result).not.toMatch(/["']/u);
+      expect(result.replace(/[“”]/gu, "\"").replace(/[‘’]/gu, "'")).toBe(text);
+    }), { numRuns: 60 });
+  });
+
+  test("never leaves one short word alone on the first line", () => {
+    for (const layout of ["page", "product"] as const) {
+      for (const [headline, first] of [
+        ["Wordcell vs Supermemory", "Wordcell vs"],
+        ["Notes on the Analytical Engine", "Notes on"],
+        ["Migrate from Supermemory", "Migrate from"],
+      ] as const) {
+        const details = layout === "page" ? page(headline) : { ...base, description: "Notes", layout, title: headline };
+        const lines = socialImageFit(details).headline.lines;
+        if (lines.length > 1) expect(lines[0]).toBe(first);
+      }
+    }
+    // A first line of one word, when the headline has three or more words, loses to any break that fits.
+    // Short lowercase words: any two fit a line, and no run of capitals reads
+    // as a name to keep whole.
+    const word = fc.stringMatching(/^[a-z]{4,6}$/u);
+    fc.assert(fc.property(fc.array(word, { minLength: 3, maxLength: 6 }), (words) => {
+      const lines = socialImageFit(page(words.join(" "))).headline.lines;
+      if (lines.length > 1) expect(lines[0]?.includes(" ")).toBe(true);
+    }), { numRuns: 40 });
+  });
+
+  test("keeps named phrases and no-break spaces on one line", () => {
+    const named = socialImageFit(page("xcb vs Claude Code Router", { keepTogether: ["claude code router"] }));
+    expect(named.headline.lines).toEqual(["xcb vs", "Claude Code Router"]);
+    const nbsp = socialImageFit({ ...base, description: "Notes", layout: "product", title: "xcb vs Claude Code Router" });
+    expect(nbsp.headline.lines.some((line) => line.includes("Claude Code Router"))).toBe(true);
+    expect(nbsp.headline.lines.join("")).not.toContain(" ");
+    const site = defineSocialImageSite({ description: "Routes", domain: "example.com", keepTogether: ["Claude Code Router"], name: "Example" });
+    expect(socialImageSiteDetails(site, { headline: "xcb vs Claude Code Router" }).keepTogether).toEqual(["Claude Code Router"]);
+    expect(() => defineSocialImageSite({ ...site, keepTogether: "x" as unknown as string[] })).toThrow("keepTogether");
+
+    const name = fc.array(fc.stringMatching(/^[A-Z][a-z]{2,7}$/u), { minLength: 2, maxLength: 3 }).map((words) => words.join(" "));
+    const filler = fc.array(fc.stringMatching(/^[a-z]{4,8}$/u), { minLength: 1, maxLength: 4 }).map((words) => words.join(" "));
+    fc.assert(fc.property(filler, name, filler, (before, phrase, after) => {
+      const fit = socialImageFit(page(`${before} ${phrase} ${after}`, { keepTogether: [phrase] }));
+      if (!fit.headline.truncated) expect(fit.headline.lines.some((line) => line.includes(phrase))).toBe(true);
+    }), { numRuns: 30 });
+  });
+
+  test("derives a default eyebrow from the route, and reports a missing or repeated one", () => {
+    expect(socialImageEyebrow("/docs/setup")).toBe("Documentation");
+    expect(socialImageEyebrow("/compare/wordcell-vs-supermemory")).toBe("Comparison");
+    expect(socialImageEyebrow("/use-cases/x?y#z")).toBe("Use cases");
+    expect(socialImageEyebrow("/blog/post")).toBe("Blog");
+    for (const none of ["/", "", "/2024/x", "/%E0%A4"]) expect(socialImageEyebrow(none)).toBeUndefined();
+
+    const site = defineSocialImageSite({ description: "Memory for agents", domain: "example.com", name: "Example" });
+    expect(socialImageSiteDetails(site, { headline: "Wordcell vs Supermemory", path: "/compare/supermemory" }).eyebrow).toBe("Comparison");
+    expect(socialImageSiteDetails(site, { eyebrow: false, headline: "Wordcell vs Supermemory", path: "/compare/supermemory" }).eyebrow).toBe("");
+    expect(socialImageSiteDetails(site, { eyebrow: "Guide", headline: "Setup", path: "/docs/setup" }).eyebrow).toBe("Guide");
+    // A section index whose headline already names the section gets none.
+    expect(socialImageSiteDetails(site, { headline: "Benchmarks for agent memory", path: "/benchmarks" }).eyebrow).toBe("");
+    expect(socialImageSiteDetails(site).eyebrow).toBeUndefined();
+
+    expect(codes({ ...page("Setup"), eyebrow: undefined } as never)).toContain("eyebrow-missing");
+    expect(codes(page("Setup", { eyebrow: "" }))).not.toContain("eyebrow-missing");
+    expect(codes({ ...base, description: "x", layout: "product" as const })).not.toContain("eyebrow-missing");
+    expect(codes(page("Gobstopper internals", { eyebrow: "Gobstopper" }))).toContain("eyebrow-repeats-headline");
+    expect(codes(page("Guides to compaction", { eyebrow: "Guide" }))).toContain("eyebrow-repeats-headline");
+    expect(codes(page("Gobstopper internals", { eyebrow: "Gob" }))).not.toContain("eyebrow-repeats-headline");
+  });
+
+  test("reports a reduced, tagline, or ellipsis-ended subtitle", () => {
+    const long = "Compacts long agent sessions into smaller copies that keep every decision every file.";
+    const reduced = socialImageFit({ ...base, description: long, layout: "product" });
+    expect(reduced.description?.reduced).toBe(true);
+    expect(reduced.findings.map(({ code }) => code)).toContain("description-reduced");
+    expect(codes({ ...base, description: "Compacts long agent sessions.", layout: "product" })).not.toContain("description-reduced");
+
+    const site = defineSocialImageSite({ description: "Memory for agents", domain: "example.com", name: "Example" });
+    expect(codes(socialImageSiteDetails(site, { description: "Memory for agents.", eyebrow: "Guide", headline: "Setup" }))).toContain("description-repeats-tagline");
+    expect(codes(socialImageSiteDetails(site))).not.toContain("description-repeats-tagline");
+    expect(codes(page("Setup", { description: "It keeps going..." }))).toContain("description-trailing-ellipsis");
+    expect(codes(page("Setup", { description: "It keeps going…" }))).toContain("description-trailing-ellipsis");
+    expect(codes(page("Setup", { description: "It stops." }))).not.toContain("description-trailing-ellipsis");
+  });
+
+  test("keeps real bracketed names and escaped brackets, drops known placeholders", () => {
+    const fit = socialImageFit(page("[untitled] notes", { description: "\\[DRAFT] means draft." }));
+    expect(fit.headline.lines.join(" ")).toBe("[untitled] notes");
+    expect(fit.description?.lines.join(" ")).toBe("[DRAFT] means draft.");
+    expect(fit.removed).toEqual([]);
+    const dropped = socialImageFit(page("[DRAFT] Notes [preview]"));
+    expect(dropped.headline.lines.join(" ")).toBe("Notes");
+    expect(dropped.removed.map(({ text }) => text)).toEqual(["[DRAFT]", "[preview]"]);
+    const glyphs = socialImageFit(page("Notes 🚀 [untitled]"));
+    expect(glyphs.headline.lines.join(" ")).toBe("Notes [untitled]");
+    expect(glyphs.removed.map(({ reason }) => reason)).toEqual(["unsupported"]);
+  });
+
+  test("measures palette distance and flags look-alike sites", () => {
+    const site = (name: string, wash: string) => defineSocialImageSite({ description: "x", domain: `${name}.com`, name, theme: { wash } });
+    const a = site("a", "#2265C3");
+    expect(socialImagePaletteDistance(socialImageSitePalette(a), socialImageSitePalette(a))).toBe(0);
+    const lookAlikes = socialImageLookAlikes([a, site("b", "#2468C0"), site("c", "#B23473")]);
+    expect(lookAlikes.map(({ first, second }) => `${first}~${second}`)).toEqual(["a~b"]);
+    expect(lookAlikes[0]?.distance).toBeLessThan(SOCIAL_IMAGE_MIN_PALETTE_DISTANCE);
+    // The README's recommended washes for the sites that looked alike in the
+    // v2.1 review are distinct from one another and from each group's anchor.
+    const recommended = [
+      ["sysone", "#476185"], ["xcb", "#2265C3"], ["sponge", "#567C8F"], ["soulscrape", "#2653D9"], ["stripe-history", "#2680D9"],
+      ["sloptrade", "#22C322"], ["clankdar", "#C322B6"], ["aicharts", "#A145A1"], ["peopleblade", "#34B253"],
+      ["textbutler", "#C3224B"], ["private", "#9BC322"], ["slopcamera", "#5822C3"], ["roughday", "#22C3C3"],
+    ] as const;
+    const anchors = new Set(["sysone", "xcb", "sponge", "soulscrape", "stripe-history"]);
+    const moved = socialImageLookAlikes(recommended.map(([name, wash]) => site(name, wash)))
+      .filter(({ first, second }) => !(anchors.has(first) && anchors.has(second)));
+    expect(moved).toEqual([]);
+    fc.assert(fc.property(fc.integer({ min: 0, max: 0xffffff }), fc.integer({ min: 0, max: 0xffffff }), (x, y) => {
+      const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`;
+      const first = socialImageSitePalette(site("x", hex(x)));
+      const second = socialImageSitePalette(site("y", hex(y)));
+      const distance = socialImagePaletteDistance(first, second);
+      expect(distance).toBeGreaterThanOrEqual(0);
+      expect(distance).toBeCloseTo(socialImagePaletteDistance(second, first), 9);
     }), { numRuns: 40 });
   });
 });

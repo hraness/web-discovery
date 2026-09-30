@@ -5,8 +5,8 @@ export declare const socialImageSize: {
     readonly width: 1200;
 };
 export declare const socialImageContentType = "image/png";
-export { CARD_HEIGHT, CARD_PADDING, CARD_WIDTH, TOP_BAR_HEIGHT, BOTTOM_RULE_HEIGHT, createSocialImageCard, createSocialImageElement, defineSocialImageSite, parseSocialImageIcon, plainSocialImageTheme, socialImageAlt, socialImageContrastRatio, SOCIAL_IMAGE_GLYPH_SHARE, socialImageFit, socialImageFonts, socialImageHeadline, socialImageIconShape, socialImageLayout, socialImageMarks, socialImageSiteDetails, } from "./social-image-card.js";
-export type { SocialImageCard, SocialImageDetails, SocialImageFit, SocialImageFonts, SocialImageIcon, SocialImageIconShape, SocialImageLayout, SocialImageMark, SocialImagePage, SocialImageRemoval, SocialImageSite, SocialImageTheme, } from "./social-image-card.js";
+export { CARD_HEIGHT, CARD_PADDING, CARD_WIDTH, TOP_BAR_HEIGHT, BOTTOM_RULE_HEIGHT, createSocialImageCard, createSocialImageElement, defineSocialImageSite, parseSocialImageIcon, plainSocialImageTheme, socialImageAlt, socialImageContrastRatio, SOCIAL_IMAGE_GLYPH_SHARE, SOCIAL_IMAGE_MIN_PALETTE_DISTANCE, socialImageEyebrow, socialImageFit, socialImageFonts, socialImageHeadline, socialImageIconShape, socialImageLayout, socialImageLookAlikes, socialImageMarks, socialImagePalette, socialImagePaletteDistance, socialImageSiteDetails, socialImageSitePalette, socialImageTypography, } from "./social-image-card.js";
+export type { SocialImageCard, SocialImageDetails, SocialImageFinding, SocialImageFindingCode, SocialImageFit, SocialImageFonts, SocialImageIcon, SocialImageIconShape, SocialImageLayout, SocialImageLookAlike, SocialImageMark, SocialImagePage, SocialImagePalette, SocialImageRemoval, SocialImageSite, SocialImageTheme, } from "./social-image-card.js";
 export type SocialImageOptions = Readonly<{
     height?: number;
     width?: number;
