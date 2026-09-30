@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.11.1"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.12.0"
   }
 }
 ```
@@ -274,15 +274,19 @@ Every icon sits in the tile by one rule:
 
 `socialImageIconShape(icon)` returns `"square"`, `"solid"`, or `"open"`, so a site can check which case its icon falls into.
 
-Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on the last line, and a two-word name such as "Puerto Rico" stays together unless that would strand the last word, in which case the break moves earlier ("Ley 60 / en Puerto Rico guide"). A description is cut before an em or en dash rather than after it, and a product description keeps its standard size and two-line limit, ending at a clause.
+Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on the first or last line, and a two-word name such as "Puerto Rico" stays together unless that would strand the last word, in which case the break moves earlier ("Ley 60 / en Puerto Rico guide"). A headline that would start with one short word moves the next word up instead: "Wordcell vs / Supermemory", not "Wordcell / vs Supermemory". A description is cut before an em or en dash rather than after it, and a product description keeps its standard size and two-line limit, ending at a clause.
+
+To keep a longer name on one line, list it in `keepTogether` on the site or the card details (`keepTogether: ["Claude Code Router"]`, matched without case), or join its words with a no-break space (U+00A0) in the copy. The card then breaks around it: "xcb vs / Claude Code Router".
+
+The card sets typography in the domain-free text fields. Straight quotes in the headline, description, eyebrow, and name become curly quotes, and apostrophes in contractions and possessives become ’ ("Lovelace’s", "ALGAL’s"). A hyphen between two ascending numbers of similar length becomes an en dash ("2024–2025", "10–20"). URLs, domains, paths, code-like tokens such as `file.ts` or `a_b`, and text in backticks stay as written. `socialImageTypography(text)` applies the same rules to any string.
 
 - **Headline.** A page headline is set at 80 pixels on one or two lines. Only a headline that cannot fit two lines at 80 pixels is set smaller, at the largest of 62 to 46 pixels where it fits in up to three lines.
 - **Description.** A description that does not fit ends at its last whole sentence or clause that does, never on a word such as "and". The card ends it with an ellipsis only when no clause fits.
 - **Eyebrow.** The card drops the eyebrow when the headline already opens with it, ignoring case: "Introducing" over "Introducing Example", or "Docs" over "Documentation".
-- **Placeholders.** Bracketed placeholders such as `[DRAFT]`, `[WIP]`, `[TODO]`, and `[untitled]` are removed. A field that holds only a placeholder counts as empty.
+- **Placeholders.** Bracketed placeholders are removed: `[DRAFT]`, `[WIP]`, `[TODO]`, `[TBD]`, `[TK]`, `[FIXME]`, `[placeholder]`, `[preview]`, `[coming soon]`, `[lorem ipsum]`, `[title]`, `[no title]`, `[description]`, and `[headline]`, ignoring case. A field that holds only a placeholder counts as empty. Other bracketed text, such as a work titled `[untitled]`, stays. Write `\[DRAFT]` to draw a listed word in brackets as written.
 - **Unsupported characters.** Emoji, CJK, and any other character the embedded fonts cannot draw are removed, so the card never shows an empty box and never fetches a fallback font.
 
-To check that copy fits as written, call `socialImageFit(details)`. It lays out the card without rendering it and returns the lines drawn, whether the description was shortened (`description.cut`), whether the headline was set smaller or needs three lines (`headline.reduced`, `headline.threeLine`), what was removed, and a list of `issues`. Assert `issues` is empty in a test, or pass `strict: true` to make the card throw instead:
+To check that copy fits as written, call `socialImageFit(details)`. It lays out the card without rendering it and returns the lines drawn, whether the description was shortened (`description.cut`) or set below its standard size (`description.reduced`), whether the headline was set smaller or needs three lines (`headline.reduced`, `headline.threeLine`), what was removed, and a list of `issues`. `findings` holds the same issues with a stable `code` each. Assert `issues` is empty in a test, or pass `strict: true` to make the card throw instead:
 
 ```ts
 import { socialImageFit, socialImageSiteDetails } from "@hraness/web-discovery/social-image/card";
@@ -290,7 +294,45 @@ import { socialImageFit, socialImageSiteDetails } from "@hraness/web-discovery/s
 expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual([]);
 ```
 
+| Code | Reported when |
+| --- | --- |
+| `headline-reduced`, `headline-three-lines`, `headline-clamped` | The headline is set smaller, needs three lines, or ends in an ellipsis. |
+| `description-shortened`, `description-clamped` | The description ends at an earlier clause, or in an ellipsis. |
+| `description-reduced` | The description fits only below its standard size. Shorten it. |
+| `description-repeats-tagline` | A page card's description is the site tagline. `socialImageSiteDetails` passes the tagline as `tagline`. |
+| `description-trailing-ellipsis` | The description you passed already ends in `...` or `…`. |
+| `eyebrow-missing` | A page card has no eyebrow. Pass `eyebrow: ""` in the details, or `eyebrow: false` on a site page, to leave it out on purpose. |
+| `eyebrow-repeats-headline` | The eyebrow repeats the headline's opening, so the card drops it. |
+| `placeholder`, `unsupported-characters` | Text was removed. |
+
+`strict: true` throws on the codes that mean the copy changed to fit. It ignores the review codes added in v0.12.0 (`description-reduced`, `description-repeats-tagline`, `description-trailing-ellipsis`, `eyebrow-missing`, and `eyebrow-repeats-headline`), so a strict build keeps passing after the upgrade.
+
 The brand color is mixed into the whole background, and the gradient deepens toward a paler wash of it in the far corner, so two sites that share a background token read as different hues side by side. The wash is `theme.wash` when you pass it, else the main color of an `app` icon, else the accent. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against every part of the background.
+
+### Keep sites apart in a feed
+
+Sites that share a hue family look like one site in a feed of thumbnails. `socialImagePaletteDistance(a, b)` measures how far apart two resolved palettes look (`socialImagePalette(theme)` or `socialImageSitePalette(site)`). `socialImageLookAlikes(sites)` returns every pair closer than `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE`. Run it in a test over every site you own:
+
+```ts
+import { socialImageLookAlikes } from "@hraness/web-discovery/social-image/card";
+
+expect(socialImageLookAlikes([socialSite, ...otherSites])).toEqual([]);
+```
+
+The package holds no site's brand colors, so it cannot check the portfolio itself. The v2.1 review found five look-alike groups: System One, Sloptrade, and Clankdar (slate and navy); xcb and AI Charts (blue); Sponge, PeopleBlade, and TextButler (sage); Soulscrape, Slopcamera, and one private site (periwinkle); and Rough Day and Stripe History (pale blue). Keep the first site of each group as it is and give the others a `theme.wash`:
+
+| Site | `theme.wash` |
+| --- | --- |
+| Sloptrade | `#22C322` (green) |
+| Clankdar | `#C322B6` (magenta) |
+| AI Charts | `#A145A1` (plum) |
+| PeopleBlade | `#34B253` (leaf green) |
+| TextButler | `#C3224B` (crimson) |
+| The private periwinkle site | `#9BC322` (lime) |
+| Slopcamera | `#5822C3` (violet) |
+| Rough Day | `#22C3C3` (teal) |
+
+On the default background each of these washes sits at least the minimum distance from every other site's v2.1 card. A site with its own `theme.background` should confirm the result with `socialImageLookAlikes`.
 
 The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
 
@@ -369,9 +411,21 @@ createSiteSocialImageResponse(socialSite, {
 
 A page card without a `description` shows no description. It does not repeat the site tagline, which appears only on the home card.
 
+A page card without an `eyebrow` takes one from its route when you pass `path`. `socialImageEyebrow(path)` names the first segment: `/docs/...` gives "Documentation", `/blog/...` "Blog", `/compare/...` and `/vs/...` "Comparison", `/guides/...` "Guide", `/integrations/...` "Integration", `/releases/...` and `/changelog` "Release", and any other segment its words in sentence case (`/use-cases` gives "Use cases"). The home page gets none, and a label that only repeats the headline is left out. Pass `eyebrow: false` to leave a card without one:
+
+```ts
+createSiteSocialImageResponse(socialSite, {
+  description: doc.summary,
+  headline: doc.title,
+  path: "/docs/setup",
+});
+```
+
 v0.11.0 changes how existing cards look, with no API change: descriptions end at a clause instead of an ellipsis, page cards without a description no longer show the tagline, duplicate eyebrows, placeholders, and unsupported characters are removed, headlines keep one size for one or two lines, the background wash follows each site's brand color, and icons sit in the safe area above. The new exports are `socialImageFit`, `socialImageIconShape`, and `SOCIAL_IMAGE_GLYPH_SHARE`, plus the optional `strict` and `theme.wash` fields.
 
 v0.11.1 fixes typechecking for consumers whose `tsconfig.json` sets `erasableSyntaxOnly`. The published source no longer uses TypeScript syntax that the option rejects, and cards render the same.
+
+v0.12.0 adds curly quotes and en dashes, keeps a short word off a headline's first line, adds `keepTogether` names, route-derived eyebrows (`path`, `eyebrow: false`, and `socialImageEyebrow`), review findings with codes in `socialImageFit`, palette distance checks, and lets real bracketed titles such as `[untitled]` through. Existing options behave as before, and `strict` throws on no new cases.
 
 `defineSocialImageSite` checks the name, domain, description, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 

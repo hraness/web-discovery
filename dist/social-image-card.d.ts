@@ -42,7 +42,23 @@ export type SocialImageLayout = "page" | "product";
 export type SocialImageDetails = Readonly<{
     description: string;
     domain: string;
+    /**
+     * The small label above a page headline, such as "Guide" or "Comparison".
+     * An empty string means the page has none on purpose; leaving it out on a
+     * page card is reported by `socialImageFit`.
+     */
     eyebrow?: string;
+    /**
+     * Multi-word names a line must not break inside, such as "Claude Code
+     * Router". Matching ignores case. A no-break space (U+00A0) in the copy
+     * does the same for one occurrence.
+     */
+    keepTogether?: readonly string[];
+    /**
+     * The site's own tagline, so `socialImageFit` can report a page card whose
+     * subtitle only repeats it. `socialImageSiteDetails` sets it.
+     */
+    tagline?: string;
     /**
      * The large text on the card. Defaults to `title` without a trailing brand
      * segment such as " | Example" when that segment repeats the eyebrow or the
@@ -107,6 +123,19 @@ export declare function socialImagePalette(theme?: Partial<SocialImageTheme>,
 /** Wash color used when the theme sets none, such as an app icon's hue. */
 brand?: string): SocialImagePalette;
 /**
+ * The smallest `socialImagePaletteDistance` at which two sites' cards read as
+ * different sites in a feed of thumbnails: about twice a just-noticeable
+ * difference. Washes 30 degrees of hue apart on one base clear it.
+ */
+export declare const SOCIAL_IMAGE_MIN_PALETTE_DISTANCE = 5;
+/**
+ * How far apart two resolved card palettes look: the mean CIE76 ΔE of the
+ * background base and its washed far corner, the colors that fill a
+ * thumbnail. Below `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE` two sites' cards read
+ * as one site; give one of them a different `theme.wash`.
+ */
+export declare function socialImagePaletteDistance(first: SocialImagePalette, second: SocialImagePalette): number;
+/**
  * Returns the card headline: `details.headline` when given, otherwise the
  * title with one trailing brand segment removed. A segment counts as the
  * brand only when it matches the eyebrow, the domain, or the domain without
@@ -125,6 +154,13 @@ export type SocialImageRemoval = Readonly<{
     reason: "placeholder" | "unsupported";
     text: string;
 }>;
+/**
+ * Sets straight quotes as curly quotes (’ ‘ “ ”) and a hyphen between two
+ * ascending numbers as an en dash. Contractions and possessives ("Lovelace's",
+ * "ALGAL's") take ’. URLs, domains, paths, and code-like tokens, and text in
+ * backticks, stay as written.
+ */
+export declare function socialImageTypography(text: string): string;
 /**
  * How an `app` icon is drawn, measured from the art itself:
  *
@@ -151,6 +187,13 @@ export declare function socialImageIconShape(icon: SocialImageIcon): SocialImage
 export declare function parseSocialImageIcon(value: unknown): SocialImageIcon;
 /** Share of a tile's side that a `mark` glyph's own bounds fill. */
 export declare const SOCIAL_IMAGE_GLYPH_SHARE = 0.6;
+/**
+ * The default eyebrow for a page at `path`: its first route segment as a
+ * section label ("/docs/setup" gives "Documentation", "/compare/x" gives
+ * "Comparison", "/use-cases" gives "Use cases"). The home page and paths
+ * without a readable segment get none.
+ */
+export declare function socialImageEyebrow(path: string): string | undefined;
 export declare function socialImageFonts(): SocialImageFonts;
 export declare function createSocialImageElement(details: SocialImageDetails): ReactElement;
 /** Where each text line and the page-layout ghost land, in card pixels. */
@@ -183,6 +226,11 @@ export type SocialImageFit = Readonly<{
          */
         cut: "clause" | "ellipsis" | "none" | "sentence";
         lines: readonly string[];
+        /**
+         * True when the description is set below its layout's standard size
+         * (36px) to fit. Shorten the copy so every card reads at one scale.
+         */
+        reduced: boolean;
         size: number;
     }> | undefined;
     /** The eyebrow as drawn, or undefined when it was empty or repeated the headline. */
@@ -200,11 +248,22 @@ export type SocialImageFit = Readonly<{
         threeLine: boolean;
         truncated: boolean;
     }>;
+    /**
+     * The same findings as `issues`, each with a stable code for tests that
+     * allow some and reject others.
+     */
+    findings: readonly SocialImageFinding[];
     /** Human-readable findings; empty when the copy fits as written. */
     issues: readonly string[];
     layout: SocialImageLayout;
     /** Placeholders and characters the card left out. */
     removed: readonly SocialImageRemoval[];
+}>;
+/** Stable identifiers for the findings `socialImageFit` reports. */
+export type SocialImageFindingCode = "description-clamped" | "description-reduced" | "description-repeats-tagline" | "description-shortened" | "description-trailing-ellipsis" | "eyebrow-missing" | "eyebrow-repeats-headline" | "headline-clamped" | "headline-reduced" | "headline-three-lines" | "placeholder" | "unsupported-characters";
+export type SocialImageFinding = Readonly<{
+    code: SocialImageFindingCode;
+    message: string;
 }>;
 /**
  * Lays out a card without rendering it and reports how its copy fitted:
@@ -222,6 +281,8 @@ export type SocialImageSite = Readonly<{
     description: string;
     domain: string;
     icon?: SocialImageIcon;
+    /** Names no card on the site may break across lines, such as "Claude Code Router". */
+    keepTogether?: readonly string[];
     mark?: SocialImageDetails["mark"];
     name: string;
     theme?: Partial<SocialImageTheme>;
@@ -229,11 +290,32 @@ export type SocialImageSite = Readonly<{
 /** Per-page copy layered over a site. Omit it for the site's home card. */
 export type SocialImagePage = Readonly<{
     description?: string;
-    eyebrow?: string;
+    /**
+     * The label above the headline. When omitted on a page card, it defaults
+     * to `socialImageEyebrow(path)`. `false` leaves the card without one.
+     */
+    eyebrow?: string | false;
     headline?: string;
     layout?: SocialImageLayout;
+    /** The page's route, such as "/docs/setup", used for the default eyebrow. */
+    path?: string;
 }>;
 export declare function defineSocialImageSite(site: SocialImageSite): SocialImageSite;
+/** The palette every card of `site` draws, including an app icon's wash. */
+export declare function socialImageSitePalette(site: SocialImageSite): SocialImagePalette;
+/** Two sites whose cards look alike. */
+export type SocialImageLookAlike = Readonly<{
+    distance: number;
+    first: string;
+    second: string;
+}>;
+/**
+ * Every pair of `sites` whose card backgrounds are closer than `minimum`
+ * (CIE76 ΔE, default `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE`), closest first.
+ * Run it over a portfolio's site records in one test to keep every site's
+ * cards distinct in a feed.
+ */
+export declare function socialImageLookAlikes(sites: readonly SocialImageSite[], minimum?: number): SocialImageLookAlike[];
 export declare function socialImageSiteDetails(site: SocialImageSite, page?: SocialImagePage): SocialImageDetails;
 export declare function socialImageAlt(site: SocialImageSite, page?: SocialImagePage): string;
 export {};
