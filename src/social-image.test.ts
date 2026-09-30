@@ -1021,3 +1021,50 @@ describe("v0.12 typography, breaks, eyebrows, and palettes", () => {
     }), { numRuns: 40 });
   });
 });
+
+describe("v0.13.1 headline widows and home-card taglines", () => {
+  const base = { domain: "example.com", title: "Example" } as const;
+  const hero = (headline: string) => ({ ...base, description: "A tagline under the hero.", eyebrow: "Research", headline, layout: "product" as const });
+  const page = (headline: string) => ({ ...base, description: "", eyebrow: "Guide", headline, layout: "page" as const });
+
+  test("breaks a three-line hero headline at the clause, never stranding the last word", () => {
+    const fit = socialImageFit(hero("See how someone thinks, and where every claim comes from."));
+    expect(fit.headline.lines).toEqual(["See how someone thinks,", "and where every claim", "comes from."]);
+    expect(fit.findings.map(({ code }) => code)).toContain("home-headline-three-lines");
+  });
+
+  test("leaves no single word on the last line when a better break exists", () => {
+    for (const make of [hero, page]) {
+      for (const headline of [
+        "See how someone thinks, and where every claim comes from.",
+        "AI writes the research. Your rules make the trade.",
+        "Every memory benchmark result, with the setup and the limits it came from.",
+        "Compacts long agent sessions into smaller copies you can resume from.",
+        "Agent memory that shows its work.",
+        "Notes on the Analytical Engine and what it was for.",
+      ]) {
+        const lines = socialImageFit(make(headline)).headline.lines;
+        if (lines.length > 1) expect(lines.at(-1)?.includes(" "), `${headline} → ${JSON.stringify(lines)}`).toBe(true);
+      }
+    }
+    // Lowercase words that may end any line, so moving one more word down is
+    // always a valid break: a lone last word always loses to it.
+    const word = fc.constantFrom("where", "claim", "comes", "thinks", "someone", "memory", "sessions", "research", "trade", "rules");
+    fc.assert(fc.property(fc.array(word, { minLength: 4, maxLength: 14 }), (words) => {
+      const text = `${words.join(" ")}.`;
+      for (const make of [hero, page]) {
+        const lines = socialImageFit(make(text)).headline.lines;
+        if (lines.length > 1 && !lines.some((line) => line.endsWith("…"))) expect(lines.at(-1)?.includes(" ")).toBe(true);
+      }
+    }), { numRuns: 300 });
+  });
+
+  test("keeps the tagline under a home card's hero headline without a finding", () => {
+    const site = defineSocialImageSite({ description: "Memory for agents that shows its work.", domain: "example.com", name: "Example" });
+    const home = socialImageSiteDetails(site, { description: "Memory for agents that shows its work.", eyebrow: "Agent memory", headline: "See where every fact came from.", layout: "product" });
+    const codes = socialImageFit(home).findings.map(({ code }) => code);
+    expect(codes).not.toContain("description-repeats-tagline");
+    const pageCard = socialImageSiteDetails(site, { description: "Memory for agents that shows its work.", eyebrow: "Guide", headline: "Setup" });
+    expect(socialImageFit(pageCard).findings.map(({ code }) => code)).toContain("description-repeats-tagline");
+  });
+});

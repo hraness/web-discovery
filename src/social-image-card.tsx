@@ -902,7 +902,7 @@ function wrapText(text: string, width: number, measure: Measure, binding: Bindin
 
 /** Words that read as dangling when they end a line or a shortened text. */
 const BINDING_WORDS = new Set([
-  "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "is", "its", "nor", "of", "on",
+  "a", "an", "and", "as", "at", "but", "by", "each", "every", "for", "from", "in", "into", "is", "its", "nor", "of", "on",
   "or", "our", "so", "than", "that", "the", "their", "to", "via", "vs", "with", "your", "&", "+",
 ]);
 
@@ -930,7 +930,14 @@ const BREAK_COST = {
   loneMiddle: 0.2,
   /** One word alone on the last line. */
   widow: 0.5,
+  /** Added when that last word is also short, such as "from." or "it". */
+  shortWidow: 1,
+  /** A clause boundary inside a line when a break could fall on it. */
+  midClause: 0.1,
 } as const;
+
+/** A lone last word narrower than this share of the line counts as short. */
+const SHORT_WIDOW_SHARE = 0.25;
 
 /** How many capitalized words run through the boundary after `index`. */
 function capitalRun(words: readonly string[], index: number): number {
@@ -997,12 +1004,19 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
       if (size(line) > width) return;
       lines.push(line);
       if (index < bounds.length - 2) cost += penalty(to - 1, index === 0 && to === 2);
+      // "See how someone thinks, / and where…" reads better than
+      // "See how someone / thinks, and where…".
+      for (let at = from; at < to - 1; at += 1) if (/[,;:]$/u.test(words[at] ?? "")) cost += BREAK_COST.midClause;
       // A lone word is an orphan. On the first line it reads as a label cut
       // off from its phrase ("Notes / on the Analytical Engine"), so it costs
       // most; one left on the last line (a widow) costs more than a middle one.
       if (!/[ \u00A0]/u.test(line)) {
         if (index === 0 && wordCount >= 3) cost += BREAK_COST.loneFirst;
-        else if (wordCount >= 4) cost += index === bounds.length - 2 ? BREAK_COST.widow : BREAK_COST.loneMiddle;
+        else if (wordCount >= 4) {
+          const last = index === bounds.length - 2;
+          cost += last ? BREAK_COST.widow : BREAK_COST.loneMiddle;
+          if (last && size(line) < width * SHORT_WIDOW_SHARE) cost += BREAK_COST.shortWidow;
+        }
       }
     }
     const lengths = lines.map(size);
@@ -1011,12 +1025,18 @@ function balanceText(text: string, width: number, measure: Measure): string[] {
     if (!Number.isFinite(cost)) return;
     if (best === undefined || cost < best.cost) best = { cost, lines };
   };
-  for (let first = 1; first < words.length; first += 1) {
-    if (count === 2) {
-      consider([first]);
-      continue;
+  // The fewest lines that fit unbound words can be one too few once no line
+  // may end on a word such as "and": then every two-line break is ruled out,
+  // and the balanced three-line break is still better than the greedy wrap,
+  // which strands a last word ("… every claim comes / from.").
+  for (let lines = count; lines <= 3 && best === undefined; lines += 1) {
+    for (let first = 1; first < words.length; first += 1) {
+      if (lines === 2) {
+        consider([first]);
+        continue;
+      }
+      for (let second = first + 1; second < words.length; second += 1) consider([first, second]);
     }
-    for (let second = first + 1; second < words.length; second += 1) consider([first, second]);
   }
   return best?.lines ?? wrapText(text, width, measure);
 }
@@ -2305,7 +2325,10 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
     eyebrowMissing: layout === "page" && details.eyebrow === undefined,
     eyebrowRepeatsHeadline: eyebrowText !== undefined
       && eyebrowRepeats(eyebrowText, flat.headline, [flat.lockup, flat.domain]) === "headline",
-    repeatsTagline: details.tagline !== undefined
+    // A home card may set the site's hero headline and keep the tagline
+    // beneath it on purpose; only a page card repeating the tagline is flagged.
+    repeatsTagline: layout === "page"
+      && details.tagline !== undefined
       && flat.description.length > 0
       && comparable(flat.headline) !== comparable(flat.lockup)
       && comparable(flat.description) === comparable(details.tagline),

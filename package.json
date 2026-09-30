@@ -1,6 +1,6 @@
 {
   "name": "@hraness/web-discovery",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Build Next.js metadata, robots.txt, sitemaps, RSS and Atom feeds, JSON-LD, IndexNow payloads, and social cards from one validated site record.",
   "license": "MIT",
   "type": "module",

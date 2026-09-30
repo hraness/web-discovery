@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.13.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.13.1"
   }
 }
 ```
@@ -300,7 +300,7 @@ expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual(
 | `home-headline-three-lines` | A home card's tagline needs three lines. Pass the site's short hero headline as `headline` with `layout: "product"`. |
 | `description-shortened`, `description-clamped` | The description ends at an earlier clause, or in an ellipsis. |
 | `description-reduced` | The description fits only below its standard size. Shorten it. |
-| `description-repeats-tagline` | A page card's description is the site tagline. `socialImageSiteDetails` passes the tagline as `tagline`. |
+| `description-repeats-tagline` | A page card's description is the site tagline. `socialImageSiteDetails` passes the tagline as `tagline`. A home card with `layout: "product"` and the hero headline shows the tagline beneath it on purpose, so it is not reported. |
 | `description-trailing-ellipsis` | The description you passed already ends in `...` or `…`. |
 | `eyebrow-missing` | A page card has no eyebrow. Pass `eyebrow: ""` in the details, or `eyebrow: false` on a site page, to leave it out on purpose. |
 | `eyebrow-repeats-headline` | The eyebrow repeats the headline's opening, so the card drops it. |
@@ -416,6 +416,8 @@ v0.11.1 fixes typechecking for consumers whose `tsconfig.json` sets `erasableSyn
 v0.12.0 adds curly quotes and en dashes, keeps a short word off a headline's first line, adds `keepTogether` names, route-derived eyebrows (`path`, `eyebrow: false`, and `socialImageEyebrow`), review findings with codes in `socialImageFit`, palette distance checks, and lets real bracketed titles such as `[untitled]` through. Existing options behave as before, and `strict` throws on no new cases.
 
 v0.13.0 redraws the card to match the marketing sites: the sticky header with the foil mark and name over the hero, in the site's Design Kit palette, with no tile or wash. Home cards set the tagline as the headline. It adds `brand`, `brandMark`, `palette`, `theme.headerBackground`, `theme.line`, `socialImagePaletteNames`, and the `home-headline-three-lines` finding. v0.12 options still build: `icon` and `mark` draw in the header, and `theme.accent` and `theme.wash` are ignored.
+
+v0.13.1 fixes headlines that left one short word alone on the last line, such as "from." under "See how someone thinks, and where every claim comes from.", when no two-line break fit. The headline now breaks at the clause instead: "See how someone thinks, / and where every claim / comes from." A home card with `layout: "product"` and the hero headline no longer reports `description-repeats-tagline` for the tagline beneath it.
 
 `defineSocialImageSite` checks the name, domain, description, brand mark, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
