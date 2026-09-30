@@ -2,6 +2,9 @@ import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/soc
 import { cloneElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 
+import { socialImageFoil, socialImageFoilCss, socialImageFoilPaint } from "./social-image-foil.js";
+import type { SocialImageFoil } from "./social-image-foil.js";
+import { DESIGN_KIT_LIGHT_PALETTES } from "./social-image-palettes.generated.js";
 import { pngCoverage } from "./social-image-raster.js";
 import type { RasterCoverage } from "./social-image-raster.js";
 
@@ -22,17 +25,33 @@ export type SocialImageMark =
   (typeof socialImageMarks)[keyof typeof socialImageMarks];
 
 export type SocialImageTheme = Readonly<{
+  /** The product primary. Cards no longer draw it; kept for v0.12 themes. */
   accent: string;
+  /** The page background the card body sits on. */
   background: string;
+  /** Headline and body text, and the ink the brand foil is mixed from. */
   foreground: string;
+  /**
+   * The sticky header band. Defaults to the Design Kit palette's header
+   * tint, or to `background` deepened slightly toward `foreground`.
+   */
+  headerBackground?: string;
+  /** The hairline under the header band. Defaults from the palette or theme. */
+  line?: string;
+  /** Eyebrow, description, and domain text. */
   muted: string;
   /**
-   * The brand color the background wash is tinted toward. Defaults to the
-   * main color of an `app` icon, else `accent`, so two sites that share a
-   * background token still get cards of their own.
+   * Legacy (v0.12): Cards since v0.13 draw the site's flat background with no
+   * brand wash. Accepted and ignored so v0.12 themes still build.
    */
   wash?: string;
 }>;
+
+/** A light-theme palette from Design Kit's `palette-system.css`. */
+export type SocialImagePaletteName = keyof typeof DESIGN_KIT_LIGHT_PALETTES;
+
+/** The palette names a card accepts, in Design Kit's order. */
+export const socialImagePaletteNames = Object.keys(DESIGN_KIT_LIGHT_PALETTES) as readonly SocialImagePaletteName[];
 
 export const plainSocialImageTheme = {
   accent: "#2457A6",
@@ -42,9 +61,11 @@ export const plainSocialImageTheme = {
 } as const satisfies SocialImageTheme;
 
 /**
- * A product icon as a `data:` URL. `mark` is a single-colour glyph that the
- * card repaints on a tile of the theme accent; `app` is a finished app icon
- * that fills the tile with its own colours.
+ * A product icon as a `data:` URL.
+ *
+ * Legacy (v0.12): Pass `brandMark` instead. A `mark` icon is drawn exactly like a
+ * `brandMark`: its alpha painted in the brand foil in the header. An `app`
+ * icon is drawn as it is, at the same size, in place of the foil mark.
  */
 export type SocialImageIcon = Readonly<{
   kind: "app" | "mark";
@@ -54,6 +75,16 @@ export type SocialImageIcon = Readonly<{
 export type SocialImageLayout = "page" | "product";
 
 export type SocialImageDetails = Readonly<{
+  /**
+   * The product name as the site header shows it, drawn in foil beside the
+   * brand mark. Defaults to the brand segment of `title`, else `title`.
+   */
+  brand?: string;
+  /**
+   * The monochrome product mark the site header paints in foil: SVG markup,
+   * or a `data:` URL of an SVG or PNG. Only its alpha is used.
+   */
+  brandMark?: string;
   description: string;
   domain: string;
   /**
@@ -79,14 +110,26 @@ export type SocialImageDetails = Readonly<{
    * domain, so an SEO page title does not become the card headline verbatim.
    */
   headline?: string;
+  /** Legacy (v0.12): Pass `brandMark`. See {@link SocialImageIcon}. */
   icon?: SocialImageIcon;
   /**
-   * "product" draws a large icon tile beside the name and description.
-   * "page" draws a small product lockup above the headline. Defaults to
-   * "page" when `headline` is set and differs from `title`.
+   * "product" is a home card: the tagline (`description`) is the headline.
+   * "page" is a subpage card: `headline` with `description` beneath it.
+   * Both share one design, the site's sticky header over its hero.
+   * Defaults to "page" when `headline` is set and differs from `title`.
    */
   layout?: SocialImageLayout;
+  /**
+   * Legacy (v0.12): Pass `brandMark`. A React node drawn in the header in the
+   * foreground color, without foil.
+   */
   mark?: ReactNode;
+  /**
+   * The site's Design Kit palette, such as "tokyo-night". Sets the
+   * background, header band, hairline, and text colors of its light theme;
+   * `theme` fields override single colors.
+   */
+  palette?: SocialImagePaletteName;
   /**
    * Throw instead of adapting when the copy does not fit as written: a
    * description that has to be shortened, a three-line headline, characters
@@ -144,11 +187,6 @@ function mix(from: string, to: string, amount: number): string {
   return toHex(a.map((value, index) => value + ((b[index] ?? value) - value) * amount));
 }
 
-function rgba(hex: string, alpha: number): string {
-  const [red, green, blue] = channels(hex);
-  return `rgba(${String(red)}, ${String(green)}, ${String(blue)}, ${String(alpha)})`;
-}
-
 function relativeLuminance(hex: string): number {
   const linear = (value: number) => {
     const scaled = value / 255;
@@ -185,77 +223,107 @@ function readable(
 
 /** Resolved colors for one card. Every text color meets its contrast rule. */
 export type SocialImagePalette = Readonly<{
-  /** Base of the background gradient. */
+  /** The body background: the site's flat page background. */
   background: string;
-  /** Far end of the background gradient: a pale wash of the brand color. */
+  /** The header band color; the second color a thumbnail shows. */
   backgroundTint: string;
   dark: boolean;
+  /** The brand foil for the mark and wordmark, mixed from `foreground` and `header`. */
+  foil: SocialImageFoil;
   foreground: string;
-  /** Knockout color for single-colour marks and letters on the tile. */
+  /** Legacy (v0.12): Tile knockout color; cards since v0.13 draw no tile. */
   glyph: string;
+  /** The sticky header band. */
+  header: string;
+  /** The hairline under the header band. */
+  headerLine: string;
   muted: string;
-  /** Accent adjusted to at least 4.5:1 for the domain and kicker text. */
+  /** Accent adjusted to at least 4.5:1 against the background. */
   primaryText: string;
-  /** The accent as the tile gradient runs from `tileTop` to `tileBottom`. */
+  /** Legacy (v0.12): Tile gradient end; cards since v0.13 draw no tile. */
   tileBottom: string;
+  /** Legacy (v0.12): Tile gradient start; cards since v0.13 draw no tile. */
   tileTop: string;
   /** Every background color text can sit on, for contrast checks. */
   surfaces: readonly string[];
-  /** The brand color behind the background wash and the icon glow. */
+  /** Legacy (v0.12): The v0.12 wash color; cards since v0.13 draw no wash. */
   wash: string;
 }>;
 
 /**
- * The page wash runs from the site background to a pale version of the
- * accent, so two sites that share a background token (a cream paper, say)
- * still get their own tint from their own brand color.
+ * The theme a card draws: the named Design Kit palette's light colors, then
+ * any explicit `theme` colors over them.
  */
-function backgroundStops(background: string, wash: string, dark: boolean) {
-  // The wash is mixed into the base itself, not only the far corner, so the
-  // whole card carries the brand hue; the gradient then deepens it.
-  const pale = dark ? wash : mix("#FFFFFF", wash, 0.42);
-  const base = mix(background, pale, dark ? 0.08 : 0.3);
-  const tint = mix(background, pale, dark ? 0.2 : 0.72);
-  const glow = mix(tint, wash, dark ? 0.12 : 0.1);
-  return { base, glow, tint, surfaces: [base, tint, glow] as const };
+function paletteTheme(
+  theme: Partial<SocialImageTheme>,
+  palette: SocialImagePaletteName | undefined,
+): Partial<SocialImageTheme> {
+  if (palette === undefined) return theme;
+  if (!Object.hasOwn(DESIGN_KIT_LIGHT_PALETTES, palette)) {
+    throw new RangeError(`palette must be one of ${socialImagePaletteNames.join(", ")}; received ${describe(palette)}.`);
+  }
+  const colors = DESIGN_KIT_LIGHT_PALETTES[palette];
+  // The marketing header is the page background at 82% over whatever
+  // scrolls beneath it; over the palette's raised surface it reads as the
+  // slightly deeper (or lighter) band the live sites show.
+  const header = mix(colors.surface, colors.background, 0.18);
+  const defined = Object.fromEntries(Object.entries(theme as Record<string, unknown>).filter(([, value]) => value !== undefined));
+  return {
+    accent: colors.primary,
+    background: colors.background,
+    foreground: colors.foreground,
+    headerBackground: header,
+    line: mix(colors.line, header, 0.35),
+    muted: colors.muted,
+    ...defined,
+  };
 }
 
 /**
- * Resolves a card theme into the colors the card draws. The accent is the
- * product primary. A mid-tone background moves toward black or white until
- * body text can reach 7:1.
+ * Resolves a card theme into the colors the card draws: the site's flat
+ * background, its header band and hairline, text colors that meet their
+ * contrast rules, and the brand foil. A mid-tone background moves toward
+ * black or white until body text can reach 7:1.
  */
 export function socialImagePalette(
   theme: Partial<SocialImageTheme> = {},
-  /** Wash color used when the theme sets none, such as an app icon's hue. */
+  /** Legacy (v0.12): The v0.12 wash color; ignored by the card. */
   brand?: string,
+  /** A Design Kit palette whose light colors fill in unset theme colors. */
+  palette?: SocialImagePaletteName,
 ): SocialImagePalette {
-  const resolved = parseSocialImageTheme(theme);
+  const merged = paletteTheme(theme, palette);
+  const resolved = parseSocialImageTheme(merged);
   const wash = resolved.wash ?? (brand === undefined ? resolved.accent : color(brand, "brand"));
   const dark = relativeLuminance(resolved.foreground) > relativeLuminance(resolved.background);
   const extremeInk = dark ? "#FFFFFF" : "#000000";
   const extremeField = dark ? "#000000" : "#FFFFFF";
+  const headerOf = (field: string) => resolved.headerBackground ?? mix(field, resolved.foreground, dark ? 0.08 : 0.05);
   let background = resolved.background;
   for (let step = 0; step <= 50; step += 1) {
     background = mix(resolved.background, extremeField, step / 50);
-    const { surfaces } = backgroundStops(background, wash, dark);
-    if (worstContrast(extremeInk, surfaces) >= 7.5) break;
+    if (worstContrast(extremeInk, [background, headerOf(background)]) >= 7.5) break;
   }
-  const { base, surfaces, tint } = backgroundStops(background, wash, dark);
+  const header = headerOf(background);
+  const surfaces = [background, header] as const;
   const foreground = readable(resolved.foreground, extremeInk, surfaces, 7);
   const muted = readable(resolved.muted, foreground, surfaces, dark ? 7 : 4.5);
   const primaryText = readable(resolved.accent, foreground, surfaces, 4.5);
+  const headerLine = resolved.line ?? mix(header, foreground, dark ? 0.2 : 0.14);
   const tileTop = dark ? resolved.accent : mix(resolved.accent, "#FFFFFF", 0.12);
   const tileBottom = mix(resolved.accent, "#000000", dark ? 0.24 : 0.12);
   const glyph = socialImageContrastRatio("#FFFFFF", mix(tileTop, tileBottom, 0.5)) >= 3
     ? "#FFFFFF"
     : readable(mix(resolved.accent, "#000000", 0.55), "#000000", [tileTop, tileBottom], 4.5);
   return {
-    background: base,
-    backgroundTint: tint,
+    background,
+    backgroundTint: header,
     dark,
+    foil: socialImageFoil(foreground, header),
     foreground,
     glyph,
+    header,
+    headerLine,
     muted,
     primaryText,
     surfaces,
@@ -289,15 +357,13 @@ function deltaE(first: string, second: string): number {
 /**
  * The smallest `socialImagePaletteDistance` at which two sites' cards read as
  * different sites in a feed of thumbnails: about twice a just-noticeable
- * difference. Washes 30 degrees of hue apart on one base clear it.
+ * difference.
  */
 export const SOCIAL_IMAGE_MIN_PALETTE_DISTANCE = 5;
 
 /**
  * How far apart two resolved card palettes look: the mean CIE76 ΔE of the
- * background base and its washed far corner, the colors that fill a
- * thumbnail. Below `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE` two sites' cards read
- * as one site; give one of them a different `theme.wash`.
+ * body background and the header band, the colors that fill a thumbnail.
  */
 export function socialImagePaletteDistance(first: SocialImagePalette, second: SocialImagePalette): number {
   return (deltaE(first.background, second.background) + deltaE(first.backgroundTint, second.backgroundTint)) / 2;
@@ -311,12 +377,16 @@ function parseSocialImageTheme(theme: unknown): SocialImageTheme {
   const fields = theme as Record<string, unknown>;
   const pick = (key: keyof typeof plainSocialImageTheme) =>
     color(fields[key] ?? plainSocialImageTheme[key], key);
+  const optional = (key: "headerBackground" | "line" | "wash") =>
+    fields[key] === undefined ? {} : { [key]: color(fields[key], key) };
   return {
     accent: pick("accent"),
     background: pick("background"),
     foreground: pick("foreground"),
     muted: pick("muted"),
-    ...(fields.wash === undefined ? {} : { wash: color(fields.wash, "wash") }),
+    ...optional("headerBackground"),
+    ...optional("line"),
+    ...optional("wash"),
   };
 }
 
@@ -555,8 +625,9 @@ export function socialImageHeadline(
 
 /** The name in a page card's lockup: the title's brand segment, or the title. */
 function lockupName(
-  details: Pick<SocialImageDetails, "domain" | "eyebrow" | "title">,
+  details: Pick<SocialImageDetails, "brand" | "domain" | "eyebrow" | "title">,
 ): string {
+  if (details.brand !== undefined) return requiredText(details.brand, "brand");
   const brands = brandKeys(details);
   for (const separator of TITLE_SEPARATORS) {
     const index = details.title.lastIndexOf(separator);
@@ -1454,11 +1525,6 @@ function iconBox(aspect: number, box: number): { height: number; width: number }
     : { height: box, width: Math.round(box * aspect) };
 }
 
-/** The icon's alpha repainted in one solid color, as an SVG data URL. */
-function knockoutSource(icon: ParsedIcon, fill: string): string {
-  return artSource(icon, fill);
-}
-
 /**
  * The icon cropped to its own bounds, as an SVG data URL, optionally with its
  * alpha repainted in one solid color. Cropping lets every glyph fill the same
@@ -1485,6 +1551,24 @@ function artSource(icon: ParsedIcon, fill?: string): string {
     return `data:image/svg+xml;base64,${utf8Base64(plain)}`;
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ${view}><mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="${iw}" height="${ih}" style="mask-type:alpha" mask-type="alpha"><image href="${href}" xlink:href="${href}" width="${iw}" height="${ih}" preserveAspectRatio="none"/></mask><rect width="${iw}" height="${ih}" fill="${fill}" mask="url(#k)"/></svg>`;
+  return `data:image/svg+xml;base64,${utf8Base64(svg)}`;
+}
+
+/** The icon cropped to its bounds with its alpha painted in the brand foil, as an SVG data URL. */
+function foilSource(icon: ParsedIcon, foil: SocialImageFoil): string {
+  const { bottom, left, right, top } = icon.bounds;
+  const fullAspect = icon.aspect * ((bottom - top) / (right - left));
+  const imageWidth = fullAspect >= 1 ? 1000 : 1000 * fullAspect;
+  const imageHeight = fullAspect >= 1 ? 1000 / fullAspect : 1000;
+  const x = Math.round(left * imageWidth);
+  const y = Math.round(top * imageHeight);
+  const width = Math.max(1, Math.round((right - left) * imageWidth));
+  const height = Math.max(1, Math.round((bottom - top) * imageHeight));
+  const href = `data:${icon.mime};base64,${icon.base64}`;
+  const image = `<image href="${href}" xlink:href="${href}" width="${String(Math.round(imageWidth))}" height="${String(Math.round(imageHeight))}" preserveAspectRatio="none"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${String(x)} ${String(y)} ${String(width)} ${String(height)}" width="${String(width)}" height="${String(height)}">`
+    + socialImageFoilPaint(foil, { height, width, x, y }, image)
+    + "</svg>";
   return `data:image/svg+xml;base64,${utf8Base64(svg)}`;
 }
 
@@ -1590,6 +1674,9 @@ type TileArt =
   | Readonly<{ node: ReactNode; type: "node" }>;
 
 function tileArt(details: SocialImageDetails, title: string): TileArt {
+  if (details.brandMark !== undefined) {
+    return { icon: parseIconSource(brandMarkSource(details.brandMark), "mark"), type: "mark" };
+  }
   if (details.icon !== undefined) {
     const icon = parseSocialImageIcon(details.icon);
     const parsed = parseIconSource(icon.src, icon.kind);
@@ -1604,202 +1691,8 @@ function tileArt(details: SocialImageDetails, title: string): TileArt {
   return { letter, type: "letter" };
 }
 
-/** Share of a tile's side that a `mark` glyph's own bounds fill. */
+/** Legacy (v0.12): Share of a v0.12 tile's side that a `mark` glyph filled; cards since v0.13 draw no tile. */
 export const SOCIAL_IMAGE_GLYPH_SHARE = 0.6;
-const GLYPH_SHARE = SOCIAL_IMAGE_GLYPH_SHARE;
-
-function tile({ art, palette, size }: {
-  art: TileArt;
-  palette: SocialImagePalette;
-  size: number;
-}): ReactElement {
-  const radius = Math.round(size * 0.235);
-  const glow = `0 ${String(Math.round(size * 0.1))}px ${String(Math.round(size * 0.26))}px ${palette.dark ? rgba(palette.tileTop, 0.55) : rgba(palette.tileBottom, 0.3)}`;
-  const rim = Math.max(2, Math.round(size / 120));
-  if (art.type === "app" && art.icon.shape === "solid") {
-    // A filled silhouette is already a finished icon: draw it alone, cropped
-    // to its own edge, so no tile shows around it as a thin rim.
-    const box = iconBox(art.icon.aspect, size);
-    return (
-      <div style={{ alignItems: "center", display: "flex", flexShrink: 0, height: size, justifyContent: "center", width: size }}>
-        <img
-          alt=""
-          height={box.height}
-          src={artSource(art.icon)}
-          style={{ height: box.height, width: box.width }}
-          width={box.width}
-        />
-      </div>
-    );
-  }
-  if (art.type === "app" && art.icon.shape === "square") {
-    // Edge-to-edge art fills the rounded tile, clipped to its corners; a
-    // hairline keeps a white or background-colored icon from dissolving.
-    return (
-      <div
-        style={{
-          borderRadius: radius,
-          boxShadow: glow,
-          display: "flex",
-          flexShrink: 0,
-          height: size,
-          overflow: "hidden",
-          position: "relative",
-          width: size,
-        }}
-      >
-        <img
-          alt=""
-          height={size}
-          src={artSource(art.icon)}
-          style={{ borderRadius: radius, height: size, width: size }}
-          width={size}
-        />
-        <div
-          style={{
-            border: `${String(rim)}px solid ${palette.dark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.08)"}`,
-            borderRadius: radius,
-            display: "flex",
-            height: size,
-            left: 0,
-            position: "absolute",
-            top: 0,
-            width: size,
-          }}
-        />
-      </div>
-    );
-  }
-  // Glyph safe area: the art's own bounds fill 60% of the tile, centered.
-  const glyphBox = Math.round(size * GLYPH_SHARE);
-  let glyph: ReactNode;
-  if (art.type === "app") {
-    // Open app art keeps its own colors on a neutral plate.
-    const box = iconBox(art.icon.aspect, glyphBox);
-    return (
-      <div
-        style={{
-          alignItems: "center",
-          backgroundImage: palette.dark
-            ? `linear-gradient(150deg, ${mix(palette.background, "#FFFFFF", 0.16)} 0%, ${mix(palette.background, "#FFFFFF", 0.08)} 100%)`
-            : `linear-gradient(150deg, #FFFFFF 0%, ${mix("#FFFFFF", palette.background, 0.45)} 100%)`,
-          border: `${String(rim)}px solid ${palette.dark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.07)"}`,
-          borderRadius: radius,
-          boxShadow: glow,
-          display: "flex",
-          flexShrink: 0,
-          height: size,
-          justifyContent: "center",
-          width: size,
-        }}
-      >
-        <img
-          alt=""
-          height={box.height}
-          src={artSource(art.icon)}
-          style={{ height: box.height, width: box.width }}
-          width={box.width}
-        />
-      </div>
-    );
-  }
-  if (art.type === "mark") {
-    const box = iconBox(art.icon.aspect, glyphBox);
-    glyph = (
-      <img
-        alt=""
-        height={box.height}
-        src={knockoutSource(art.icon, palette.glyph)}
-        style={{ height: box.height, width: box.width }}
-        width={box.width}
-      />
-    );
-  } else if (art.type === "node") {
-    glyph = sizedMark(art.node, glyphBox);
-  } else {
-    glyph = (
-      <div
-        style={{
-          display: "flex",
-          fontSize: Math.round(size * 0.54),
-          fontWeight: 700,
-          letterSpacing: 0,
-          lineHeight: 1,
-          marginTop: -Math.round(size * 0.04),
-        }}
-      >
-        {art.letter}
-      </div>
-    );
-  }
-  return (
-    <div
-      style={{
-        alignItems: "center",
-        backgroundImage: `linear-gradient(150deg, ${palette.tileTop} 0%, ${palette.tileBottom} 100%)`,
-        border: `${String(rim)}px solid ${rgba(mix(palette.tileTop, "#FFFFFF", 0.5), palette.dark ? 0.32 : 0.45)}`,
-        borderRadius: radius,
-        boxShadow: glow,
-        color: palette.glyph,
-        display: "flex",
-        flexShrink: 0,
-        height: size,
-        justifyContent: "center",
-        width: size,
-      }}
-    >
-      {glyph}
-    </div>
-  );
-}
-
-function ghostArt({ art, palette, size }: {
-  art: TileArt;
-  palette: SocialImagePalette;
-  size: number;
-}): ReactElement {
-  const faint = mix(palette.background, palette.tileTop, palette.dark ? 0.16 : 0.1);
-  if (art.type === "app") {
-    const box = art.icon.shape === "square" ? { height: size, width: size } : iconBox(art.icon.aspect, size);
-    return (
-      <img
-        alt=""
-        height={box.height}
-        src={artSource(art.icon)}
-        style={{ borderRadius: art.icon.shape === "square" ? Math.round(size * 0.235) : 0, height: box.height, opacity: 0.07, width: box.width }}
-        width={box.width}
-      />
-    );
-  }
-  if (art.type === "mark") {
-    const box = iconBox(art.icon.aspect, size);
-    return (
-      <img
-        alt=""
-        height={box.height}
-        src={knockoutSource(art.icon, faint)}
-        style={{ height: box.height, width: box.width }}
-        width={box.width}
-      />
-    );
-  }
-  if (art.type === "node") {
-    return <div style={{ color: faint, display: "flex" }}>{sizedMark(art.node, size)}</div>;
-  }
-  // A cropped letterform reads as a broken shape, so the monogram fallback
-  // ghosts the rounded tile instead.
-  return (
-    <div
-      style={{
-        backgroundColor: faint,
-        borderRadius: Math.round(size * 0.235),
-        display: "flex",
-        height: size,
-        width: size,
-      }}
-    />
-  );
-}
 
 /* ----------------------------------------------------------------- layout */
 
@@ -1830,18 +1723,8 @@ function lines({ color: textColor, text, style }: {
   );
 }
 
-function fieldBackground(palette: SocialImagePalette, x: string, y: string): string {
-  const glow = palette.dark ? 0.3 : 0.16;
-  return [
-    `radial-gradient(circle at ${x} ${y}, ${rgba(palette.wash, glow)} 0%, ${rgba(palette.wash, 0)} 42%)`,
-    `linear-gradient(155deg, ${palette.background} 0%, ${palette.backgroundTint} 100%)`,
-  ].join(", ");
-}
-
-const NAME: TextStyle = { lineHeight: 1.04, tracking: -0.02, weight: 700 };
 const HEADLINE: TextStyle = { lineHeight: 1.06, tracking: -0.02, weight: 700 };
 const BODY: TextStyle = { lineHeight: 1.3, tracking: 0, weight: 400 };
-const LABEL: TextStyle = { lineHeight: 1.2, tracking: 0, weight: 700 };
 
 type Copy = Readonly<{
   description: string;
@@ -1852,6 +1735,19 @@ type Copy = Readonly<{
 }>;
 
 type Box = Readonly<{ height: number; width: number; x: number; y: number }>;
+
+/** A `brandMark` as a data URL: SVG markup is encoded, a data URL passes through. */
+function brandMarkSource(mark: unknown): string {
+  if (typeof mark !== "string" || mark.trim().length === 0) {
+    throw new TypeError("brandMark must be SVG markup or a data: URL of an SVG or PNG.");
+  }
+  const trimmed = mark.trim();
+  if (trimmed.startsWith("data:")) return trimmed;
+  if (!/^(?:<\?xml[^>]*>\s*)?<svg\b/iu.test(trimmed)) {
+    throw new TypeError("brandMark must be SVG markup or a data: URL of an SVG or PNG.");
+  }
+  return `data:image/svg+xml;base64,${utf8Base64(trimmed)}`;
+}
 
 type CardFit = Readonly<{
   description: FitBlock | undefined;
@@ -1973,309 +1869,202 @@ export function socialImageEyebrow(path: string): string | undefined {
   return `${text.charAt(0).toLocaleUpperCase("en-US")}${text.slice(1)}`;
 }
 
-const PRODUCT = {
-  description: [40, 38, 36],
-  descriptionSmall: [34, 32, 30],
-  gap: 60,
-  maxGroup: 510,
-  pad: 72,
-  tile: 304,
-} as const;
-
-function productCard(
-  copy: Copy,
-  art: TileArt,
-  palette: SocialImagePalette,
-  fonts: SocialImageFonts,
-): CardLayout {
-  const column = CARD_WIDTH - PRODUCT.pad * 2 - PRODUCT.tile - PRODUCT.gap;
-  const kickerText = eyebrowKicker(copy, [copy.headline, copy.domain]);
-  const kicker = kickerText === undefined
-    ? undefined
-    : fitClamped(fonts, kickerText, column, 32, 1, LABEL);
-  const kickerSpace = kicker === undefined ? 0 : blockHeight(kicker) + 14;
-
-  const name = fitWhole(fonts, copy.headline, column, [104, 96, 88, 80, 72], 1, NAME)
-    ?? fitWhole(fonts, copy.headline, column, [80, 72, 66, 60, 56, 52, 48], 2, NAME)
-    // A sentence passed as the title may take a third line rather than
-    // break a proper name or lose its ending to an ellipsis.
-    ?? fitWhole(fonts, copy.headline, column, [48], 3, NAME)
-    ?? fitClamped(fonts, copy.headline, column, 48, 3, NAME);
-  const domain = fitClamped(fonts, copy.domain, column, 34, 1, LABEL);
-  const nameGap = 20;
-  const domainGap = 30;
-  const descBudget = PRODUCT.maxGroup - kickerSpace - blockHeight(name) - blockHeight(domain) - domainGap - nameGap;
-
-  let description: FitBlock | undefined;
-  if (copy.description.length > 0) {
-    const fitsBudget = (candidate: TextBlock) => blockHeight(candidate) <= descBudget;
-    // A product description keeps the standard sizes and at most two
-    // lines: a long one is cut at a sentence or clause before it shrinks,
-    // so every product card reads at the same scale.
-    description = fitDescription(fonts, copy.description, column, PRODUCT.description, 2, fitsBudget, false)
-      ?? fitDescription(fonts, copy.description, column, PRODUCT.description, 2, fitsBudget, true)
-      ?? fitDescription(fonts, copy.description, column, PRODUCT.descriptionSmall, 2, fitsBudget, false)
-      ?? fitDescription(fonts, copy.description, column, PRODUCT.descriptionSmall, 2, fitsBudget, true)
-      ?? clampDescription(
-        fonts,
-        copy.description,
-        column,
-        Math.max(1, Math.min(2, Math.floor(descBudget / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)))),
-      );
-  }
-
-  const groupHeight = kickerSpace + blockHeight(name)
-    + (description === undefined ? 0 : nameGap + blockHeight(description))
-    + domainGap + blockHeight(domain);
-  const x = PRODUCT.pad + PRODUCT.tile + PRODUCT.gap;
-  let y = (CARD_HEIGHT - groupHeight) / 2;
-  const textBoxes: Box[] = [];
-  const place = (text: TextBlock | undefined, gapAfter: number) => {
-    if (text === undefined) return;
-    text.widths.forEach((width, index) => {
-      textBoxes.push({ height: text.size * text.style.lineHeight, width, x, y: y + index * text.size * text.style.lineHeight });
-    });
-    y += blockHeight(text) + gapAfter;
-  };
-  place(kicker, 14);
-  place(name, description === undefined ? 0 : nameGap);
-  place(description, 0);
-  y += domainGap;
-  place(domain, 0);
-
-  const element = (
-    <div
-      style={{
-        alignItems: "center",
-        backgroundImage: fieldBackground(palette, `${String(PRODUCT.pad + PRODUCT.tile / 2)}px`, "50%"),
-        display: "flex",
-        height: "100%",
-        padding: `0 ${String(PRODUCT.pad)}px`,
-        width: "100%",
-      }}
-    >
-      {tile({ art, palette, size: PRODUCT.tile })}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          marginLeft: PRODUCT.gap,
-          width: column,
-        }}
-      >
-        {kicker === undefined ? null : lines({ color: palette.primaryText, style: { marginBottom: 14 }, text: kicker })}
-        {lines({ text: name })}
-        {description === undefined ? null : (
-          lines({ color: palette.muted, style: { marginTop: nameGap }, text: description })
-        )}
-        {lines({ color: palette.primaryText, style: { marginTop: domainGap }, text: domain })}
-      </div>
-    </div>
-  );
-  return { element, fit: { description, eyebrow: kicker, headline: name, reduced: name.size < 72 }, textBoxes };
-}
-
-const PAGE = {
-  bottom: 72,
-  descriptionWidth: 860,
-  headlineWidth: 880,
+/**
+ * The one card: a crop of the site's sticky header over the top of its
+ * hero. The header band carries the foil brand mark, the foil product name,
+ * and the domain; the body carries the eyebrow, the headline, and the
+ * description in the site's own type scale and colors.
+ */
+const CARD = {
+  /** Space between the header hairline and the body text. */
+  bodyTop: 44,
+  bottom: 60,
   descriptionSizes: [36, 34, 32, 30],
-  headGap: 30,
+  descriptionWidth: 940,
+  domainSize: 30,
+  eyebrowGap: 18,
+  eyebrowSize: 32,
+  headGap: 26,
+  header: 124,
   /** The headline size for one and two lines. */
   headline: 80,
   /** Sizes tried, largest first, when the headline needs three lines. */
   headlineThreeLine: [62, 58, 54, 50, 46],
-  lockup: 112,
-  lockupGap: 28,
-  minGapBelowLockup: 40,
+  headlineWidth: 1056,
+  hairline: 2,
+  /** The brand mark's box in the header. */
+  mark: 54,
+  markGap: 18,
+  /** Wordmark sizes, largest first; the standard size sets the cap height near the mark's. */
+  nameSizes: [58, 52, 46, 42],
   pad: 72,
-  top: 60,
+  /** Home-card tagline sizes for two lines, then three. */
+  taglineTwoLine: [80, 74, 68, 64],
+  taglineThreeLine: [60, 56, 52, 48],
 } as const;
 
-function pageCard(
+const WORDMARK: TextStyle = { lineHeight: 1.1, tracking: -0.04, weight: 700 };
+const EYEBROW: TextStyle = { lineHeight: 1.2, tracking: 0, weight: 400 };
+const DOMAIN: TextStyle = { lineHeight: 1.2, tracking: 0, weight: 400 };
+
+/** The brand mark drawn in the header band, at `box` pixels. */
+function headerMark(art: TileArt, palette: SocialImagePalette, box: number): ReactNode {
+  if (art.type === "letter") return null;
+  if (art.type === "node") {
+    return <div style={{ color: palette.foreground, display: "flex" }}>{sizedMark(art.node, box)}</div>;
+  }
+  const size = iconBox(art.icon.aspect, box);
+  const src = art.type === "mark" ? foilSource(art.icon, palette.foil) : artSource(art.icon);
+  return <img alt="" height={size.height} src={src} style={{ display: "flex" }} width={size.width} />;
+}
+
+function markWidth(art: TileArt, box: number): number {
+  if (art.type === "letter") return 0;
+  if (art.type === "node") return box;
+  return iconBox(art.icon.aspect, box).width;
+}
+
+/** The body headline: a page title at the page scale, a tagline at the home scale. */
+function fitHeadline(
+  fonts: SocialImageFonts,
+  text: string,
+  layout: SocialImageLayout,
+  available: number,
+): { headline: TextBlock; reduced: boolean } {
+  const full = CARD.headlineWidth;
+  if (layout === "product") {
+    const head = fitWhole(fonts, text, full, CARD.taglineTwoLine, 2, HEADLINE)
+      ?? fitWhole(fonts, text, full, CARD.taglineThreeLine, 3, HEADLINE)
+      ?? fitClamped(fonts, text, full, CARD.taglineThreeLine[CARD.taglineThreeLine.length - 1] ?? 48, 3, HEADLINE);
+    // A home tagline is set as large as it fits in two lines; only a third
+    // line or an ellipsis counts as a change to the copy.
+    return { headline: head, reduced: false };
+  }
+  // One headline size for every one- and two-line page title, so cards
+  // across a site match; smaller sizes only when three lines are unavoidable.
+  const two = fitWhole(fonts, text, full, [CARD.headline], 2, HEADLINE);
+  if (two !== null) return { headline: two, reduced: false };
+  const three = CARD.headlineThreeLine
+    .map((size) => fitWhole(fonts, text, full, [size], 3, HEADLINE))
+    .find((head): head is TextBlock => head !== null && blockHeight(head) <= available);
+  if (three !== undefined) return { headline: three, reduced: true };
+  const smallest = CARD.headlineThreeLine[CARD.headlineThreeLine.length - 1] ?? 46;
+  return {
+    headline: fitClamped(fonts, text, full, smallest, Math.max(1, Math.min(3, Math.floor(available / (smallest * HEADLINE.lineHeight)))), HEADLINE),
+    reduced: true,
+  };
+}
+
+function siteCard(
   copy: Copy,
+  layout: SocialImageLayout,
   art: TileArt,
   palette: SocialImagePalette,
   fonts: SocialImageFonts,
 ): CardLayout {
-  const width: number = PAGE.headlineWidth;
-  const lockupWidth = width - PAGE.lockup - PAGE.lockupGap;
-  const lockupName = fitClamped(fonts, copy.lockup, lockupWidth, 42, 1, LABEL);
-  const lockupDomain = fitClamped(fonts, copy.domain, lockupWidth, 34, 1, LABEL);
-  const kickerText = eyebrowKicker(copy, [copy.lockup, copy.domain, copy.headline]);
-  const kicker = kickerText === undefined ? undefined : fitClamped(fonts, kickerText, width, 32, 1, LABEL);
-  const kickerSpace = kicker === undefined ? 0 : blockHeight(kicker) + 16;
-  const available = CARD_HEIGHT - PAGE.top - PAGE.bottom - PAGE.lockup - PAGE.minGapBelowLockup - kickerSpace;
-
-  const descriptionWidth = Math.min(width, PAGE.descriptionWidth);
-  const hasDescription = copy.description.length > 0;
-
-  // One headline size for every one- and two-line headline, so cards across
-  // a site match; smaller sizes only when three lines are unavoidable.
-  // A headline that would break into two lines with a lone word ("Query /
-  // the derived graph") but fits the card's full width stays on one line;
-  // the ghost art moves aside for it.
-  const oneLine = fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [PAGE.headline], 1, HEADLINE);
-  const balanced = fitWhole(fonts, copy.headline, width, [PAGE.headline], 2, HEADLINE);
-  const orphaned = balanced !== null && balanced.lines.length === 2
-    && balanced.lines.some((line) => !/\s/u.test(line.trim()));
-  // Two lines at the full width come before any smaller size: the headline
-  // size changes only when three lines are unavoidable.
-  const wide = balanced === null
-    ? fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [PAGE.headline], 2, HEADLINE)
-    : null;
-  const twoLine = oneLine !== null && (balanced === null || orphaned) ? oneLine : balanced ?? wide;
-  const heads = twoLine === null
-    ? PAGE.headlineThreeLine
-      .flatMap((size) => [
-        fitWhole(fonts, copy.headline, width, [size], 3, HEADLINE),
-        fitWhole(fonts, copy.headline, CARD_WIDTH - 2 * PAGE.pad, [size], 3, HEADLINE),
-      ])
-      .filter((head): head is TextBlock => head !== null)
-    : [twoLine];
-  let headline: TextBlock | undefined;
-  let description: FitBlock | undefined;
-  const room = (head: TextBlock) => available - blockHeight(head) - PAGE.headGap;
-  if (hasDescription) {
-    const passes = [
-      (head: TextBlock) => fitDescription(fonts, copy.description, descriptionWidth, PAGE.descriptionSizes, 2, (desc) => blockHeight(desc) <= room(head), false),
-      (head: TextBlock) => fitDescription(fonts, copy.description, descriptionWidth, PAGE.descriptionSizes, 2, (desc) => blockHeight(desc) <= room(head), true),
-      (head: TextBlock) => {
-        const lines = Math.min(2, Math.floor(room(head) / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)));
-        return lines < 1 ? null : clampDescription(fonts, copy.description, descriptionWidth, lines);
-      },
-    ];
-    search: for (const pass of passes) {
-      for (const head of heads) {
-        const desc = pass(head);
-        if (desc !== null) {
-          headline = head;
-          description = desc;
-          break search;
-        }
-      }
-    }
-  } else {
-    headline = heads.find((head) => blockHeight(head) <= available);
-  }
-  if (headline === undefined) {
-    const smallest = PAGE.headlineThreeLine[PAGE.headlineThreeLine.length - 1] ?? 50;
-    headline = fitClamped(
-      fonts,
-      copy.headline,
-      width,
-      smallest,
-      Math.max(1, Math.min(3, Math.floor(available / (smallest * HEADLINE.lineHeight)))),
-      HEADLINE,
-    );
-  }
-
-  // Short copy would leave a dead band under the lockup, so the text group
-  // sits centred in the space between the lockup and the bottom padding.
-  const stackHeight = kickerSpace + blockHeight(headline)
-    + (description === undefined ? 0 : PAGE.headGap + blockHeight(description));
-  const lift = Math.max(0, Math.floor((available + kickerSpace - stackHeight) / 2));
-
+  const inner = CARD_WIDTH - CARD.pad * 2;
   const textBoxes: Box[] = [];
-  const push = (text: TextBlock, top: number, left: number = PAGE.pad) => {
-    text.widths.forEach((lineWidth, index) => {
-      const lineHeight = text.size * text.style.lineHeight;
-      textBoxes.push({ height: lineHeight, width: lineWidth, x: left, y: top + index * lineHeight });
-    });
-  };
-  const lockupTextHeight = blockHeight(lockupName) + 2 + blockHeight(lockupDomain);
-  const lockupTextTop = PAGE.top + (PAGE.lockup - lockupTextHeight) / 2;
-  push(lockupName, lockupTextTop, PAGE.pad + PAGE.lockup + PAGE.lockupGap);
-  push(lockupDomain, lockupTextTop + blockHeight(lockupName) + 2, PAGE.pad + PAGE.lockup + PAGE.lockupGap);
-  textBoxes.push({ height: PAGE.lockup, width: PAGE.lockup, x: PAGE.pad, y: PAGE.top });
-  const bottom = CARD_HEIGHT - PAGE.bottom - lift;
-  const descriptionTop = description === undefined ? bottom : bottom - blockHeight(description);
-  const headlineTop = descriptionTop - (description === undefined ? 0 : PAGE.headGap) - blockHeight(headline);
-  if (description !== undefined) push(description, descriptionTop);
-  push(headline, headlineTop);
-  if (kicker !== undefined) push(kicker, headlineTop - kickerSpace);
 
-  const ghost = ghostPlacement(art, textBoxes);
+  // Header band: mark and wordmark on the left, the domain on the right.
+  const domain = fitClamped(fonts, copy.domain, inner / 3, CARD.domainSize, 1, DOMAIN);
+  const domainWidth = domain.widths[0] ?? 0;
+  const markSpace = art.type === "letter" ? 0 : markWidth(art, CARD.mark) + CARD.markGap;
+  const nameWidth = inner - markSpace - domainWidth - 48;
+  const name = fitWhole(fonts, copy.lockup, nameWidth, CARD.nameSizes, 1, WORDMARK)
+    ?? fitClamped(fonts, copy.lockup, nameWidth, CARD.nameSizes[CARD.nameSizes.length - 1] ?? 42, 1, WORDMARK);
+  const nameLineHeight = name.size * WORDMARK.lineHeight;
+  textBoxes.push({ height: nameLineHeight, width: name.widths[0] ?? 0, x: CARD.pad + markSpace, y: (CARD.header - nameLineHeight) / 2 });
+  textBoxes.push({ height: blockHeight(domain), width: domainWidth, x: CARD_WIDTH - CARD.pad - domainWidth, y: (CARD.header - blockHeight(domain)) / 2 });
+
+  // Body: eyebrow, headline, description, centred between the header and
+  // the bottom padding.
+  const bodyTop = CARD.header + CARD.hairline + CARD.bodyTop;
+  const available = CARD_HEIGHT - bodyTop - CARD.bottom;
+  const kickerText = eyebrowKicker(copy, [copy.lockup, copy.domain, copy.headline]);
+  const kicker = kickerText === undefined ? undefined : fitClamped(fonts, kickerText, inner, CARD.eyebrowSize, 1, EYEBROW);
+  const kickerSpace = kicker === undefined ? 0 : blockHeight(kicker) + CARD.eyebrowGap;
+
+  const { headline, reduced } = fitHeadline(fonts, copy.headline, layout, available - kickerSpace);
+  let description: FitBlock | undefined;
+  if (copy.description.length > 0) {
+    const room = available - kickerSpace - blockHeight(headline) - CARD.headGap;
+    const fits = (candidate: TextBlock) => blockHeight(candidate) <= room;
+    const width = CARD.descriptionWidth;
+    description = fitDescription(fonts, copy.description, width, CARD.descriptionSizes, 2, fits, false)
+      ?? fitDescription(fonts, copy.description, width, CARD.descriptionSizes, 2, fits, true)
+      ?? clampDescription(fonts, copy.description, width, Math.max(1, Math.min(2, Math.floor(room / (SOCIAL_IMAGE_MIN_FONT_SIZE * BODY.lineHeight)))));
+  }
+  const stack = kickerSpace + blockHeight(headline) + (description === undefined ? 0 : CARD.headGap + blockHeight(description));
+  // Short copy sits a little above centre, as a hero does under its header.
+  const lift = Math.max(0, Math.floor((available - stack) * 0.42));
+  let y = bodyTop + lift;
+  const place = (text: TextBlock | undefined, gapAfter: number) => {
+    if (text === undefined) return;
+    const lineHeight = text.size * text.style.lineHeight;
+    text.widths.forEach((width, index) => {
+      textBoxes.push({ height: lineHeight, width, x: CARD.pad, y: y + index * lineHeight });
+    });
+    y += blockHeight(text) + gapAfter;
+  };
+  place(kicker, CARD.eyebrowGap);
+  place(headline, CARD.headGap);
+  place(description, 0);
 
   const element = (
-    <div
-      style={{
-        backgroundImage: fieldBackground(palette, `${String(PAGE.pad + PAGE.lockup / 2)}px`, `${String(PAGE.top + PAGE.lockup / 2)}px`),
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        padding: `${String(PAGE.top)}px ${String(PAGE.pad)}px ${String(PAGE.bottom)}px`,
-        position: "relative",
-        width: "100%",
-      }}
-    >
-      {ghost === undefined ? null : (
-        <div style={{ display: "flex", left: ghost.x, position: "absolute", top: ghost.y }}>
-          {ghostArt({ art, palette, size: ghost.size })}
+    <div style={{ backgroundColor: palette.background, display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
+      <div
+        style={{
+          alignItems: "center",
+          backgroundColor: palette.header,
+          borderBottom: `${String(CARD.hairline)}px solid ${palette.headerLine}`,
+          display: "flex",
+          height: CARD.header + CARD.hairline,
+          justifyContent: "space-between",
+          padding: `0 ${String(CARD.pad)}px`,
+          width: "100%",
+        }}
+      >
+        <div style={{ alignItems: "center", display: "flex" }}>
+          {art.type === "letter" ? null : (
+            <div style={{ display: "flex", marginRight: CARD.markGap }}>{headerMark(art, palette, CARD.mark)}</div>
+          )}
+          <div
+            style={{
+              backgroundClip: "text",
+              backgroundImage: socialImageFoilCss(palette.foil),
+              color: "transparent",
+              display: "flex",
+              fontSize: name.size,
+              fontWeight: 700,
+              letterSpacing: `${String(WORDMARK.tracking)}em`,
+              lineHeight: WORDMARK.lineHeight,
+              // Room for the last glyph's overhang, so the clip keeps its edge.
+              paddingRight: Math.ceil(name.size * 0.06),
+              whiteSpace: "nowrap",
+            }}
+          >
+            {name.lines[0] ?? ""}
+          </div>
         </div>
-      )}
-      <div style={{ alignItems: "center", display: "flex", height: PAGE.lockup }}>
-        {tile({ art, palette, size: PAGE.lockup })}
-        <div style={{ display: "flex", flexDirection: "column", marginLeft: PAGE.lockupGap }}>
-          {lines({ text: lockupName })}
-          {lines({ color: palette.primaryText, style: { marginTop: 2 }, text: lockupDomain })}
-        </div>
+        {lines({ color: palette.muted, text: domain })}
       </div>
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           flexGrow: 1,
-          justifyContent: "flex-end",
-          paddingBottom: lift,
+          padding: `${String(CARD.bodyTop + lift)}px ${String(CARD.pad)}px ${String(CARD.bottom)}px`,
         }}
       >
-        {kicker === undefined ? null : lines({ color: palette.primaryText, style: { marginBottom: 16 }, text: kicker })}
-        {lines({ text: headline })}
+        {kicker === undefined ? null : lines({ color: palette.muted, style: { marginBottom: CARD.eyebrowGap }, text: kicker })}
+        {lines({ color: palette.foreground, text: headline })}
         {description === undefined ? null : (
-          lines({ color: palette.muted, style: { marginTop: PAGE.headGap }, text: description })
+          lines({ color: palette.muted, style: { marginTop: CARD.headGap }, text: description })
         )}
       </div>
     </div>
   );
-  return {
-    element,
-    fit: { description, eyebrow: kicker, headline, reduced: headline.size < PAGE.headline },
-    ...(ghost === undefined ? {} : { ghost: ghostBox(art, ghost) }),
-    textBoxes: textBoxes.slice(0, 2).concat(textBoxes.slice(3)),
-  };
-}
-
-type GhostPlacement = Readonly<{ size: number; x: number; y: number }>;
-
-function ghostBox(art: TileArt, ghost: GhostPlacement): Box {
-  const box = iconBox(artAspect(art), ghost.size);
-  return { height: box.height, width: box.width, x: ghost.x, y: ghost.y };
-}
-
-function artAspect(art: TileArt): number {
-  if (art.type === "app") return art.icon.shape === "solid" ? art.icon.aspect : 1;
-  return art.type === "mark" ? art.icon.aspect : 1;
-}
-
-/**
- * Places a large faint copy of the icon so it bleeds off the bottom-right
- * corner without touching any text line. Returns undefined when even the
- * smallest candidate would overlap text.
- */
-function ghostPlacement(art: TileArt, textBoxes: readonly Box[]): GhostPlacement | undefined {
-  const clearance = 36;
-  const aspect = artAspect(art);
-  for (const size of [520, 480, 440, 400, 360]) {
-    const box = iconBox(aspect, size);
-    const y = CARD_HEIGHT - Math.round(box.height * 0.7);
-    let x = CARD_WIDTH - Math.round(box.width * 0.66);
-    for (const text of textBoxes) {
-      if (text.y + text.height + clearance > y) x = Math.max(x, text.x + text.width + clearance);
-    }
-    if (CARD_WIDTH - x >= box.width * 0.34) return { size, x, y };
-  }
-  return undefined;
+  return { element, fit: { description, eyebrow: kicker, headline, reduced }, textBoxes };
 }
 
 /* ------------------------------------------------------------------ entry */
@@ -2370,6 +2159,7 @@ export type SocialImageFindingCode =
   | "headline-clamped"
   | "headline-reduced"
   | "headline-three-lines"
+  | "home-headline-three-lines"
   | "placeholder"
   | "unsupported-characters";
 
@@ -2421,7 +2211,8 @@ function fitFindings(
     }
   }
   if (fit.headline.truncated) add("headline-clamped", "headline does not fit and was clamped with an ellipsis");
-  else if (fit.headline.threeLine) add("headline-three-lines", `headline needs three lines, so it is set at ${String(fit.headline.size)}px`);
+  else if (fit.headline.threeLine && fit.layout === "page") add("headline-three-lines", `headline needs three lines, so it is set at ${String(fit.headline.size)}px`);
+  else if (fit.headline.threeLine) add("home-headline-three-lines", `the home tagline needs three lines at ${String(fit.headline.size)}px; pass the site's short hero headline as the home page's \`headline\``);
   else if (fit.headline.reduced) add("headline-reduced", `headline does not fit two lines at the standard size, so it is set at ${String(fit.headline.size)}px`);
   if (fit.description !== undefined && fit.description.cut !== "none") {
     if (fit.description.cut === "ellipsis") add("description-clamped", "description does not fit and was clamped with an ellipsis");
@@ -2477,12 +2268,17 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
     headline: oneLine(headline),
     lockup: oneLine(copy.lockup.length > 0 ? copy.lockup : headline),
   };
+  // A home card is the site's hero: the product name sits in the header, so
+  // the tagline becomes the headline. A card whose headline differs from the
+  // product name (a named headline, or a title such as "Pricing | Example")
+  // keeps its description beneath the headline instead.
+  const ownHeadline = comparable(flat.headline) !== comparable(flat.lockup);
+  const hero: Copy = layout === "product" && !ownHeadline && flat.description.length > 0
+    ? { ...flat, description: "", headline: flat.description }
+    : flat;
   const art = tileArt(details, flat.lockup.length > 0 ? flat.lockup : flat.headline);
-  const brand = art.type === "app" || art.type === "mark" ? art.icon.hue : undefined;
-  const palette = socialImagePalette(details.theme ?? {}, art.type === "app" ? brand : undefined);
-  const card = layout === "page"
-    ? pageCard(flat, art, palette, fonts)
-    : productCard(flat, art, palette, fonts);
+  const palette = socialImagePalette(details.theme ?? {}, undefined, details.palette);
+  const card = siteCard(hero, layout, art, palette, fonts);
 
   const measured: Omit<SocialImageFit, "findings" | "issues"> = {
     description: card.fit.description === undefined
@@ -2539,7 +2335,6 @@ function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
     ),
     fit,
     fonts,
-    ...(card.ghost === undefined ? {} : { ghost: card.ghost }),
     height: CARD_HEIGHT,
     textBoxes: card.textBoxes,
     width: CARD_WIDTH,
@@ -2568,13 +2363,20 @@ export function createSocialImageCard(
  * site renders. The card design itself stays in this package.
  */
 export type SocialImageSite = Readonly<{
+  /** The product name as the site header shows it. Defaults to `name`. */
+  brand?: string;
+  /** The header's monochrome brand mark: SVG markup or a data: URL. */
+  brandMark?: string;
   description: string;
   domain: string;
+  /** Legacy (v0.12): pass `brandMark`. */
   icon?: SocialImageIcon;
   /** Names no card on the site may break across lines, such as "Claude Code Router". */
   keepTogether?: readonly string[];
   mark?: SocialImageDetails["mark"];
   name: string;
+  /** The site's Design Kit palette. See {@link SocialImageDetails.palette}. */
+  palette?: SocialImagePaletteName;
   theme?: Partial<SocialImageTheme>;
 }>;
 
@@ -2610,14 +2412,16 @@ export function defineSocialImageSite(site: SocialImageSite): SocialImageSite {
   if (site.keepTogether !== undefined && (!Array.isArray(site.keepTogether) || !site.keepTogether.every((phrase) => typeof phrase === "string"))) {
     throw new TypeError("social image site keepTogether must be an array of strings");
   }
+  if (site.brand !== undefined) requiredText(site.brand, "brand");
+  if (site.brandMark !== undefined) parseIconSource(brandMarkSource(site.brandMark), "mark");
+  if (site.palette !== undefined) paletteTheme({}, site.palette);
   const icon = site.icon === undefined ? undefined : parseSocialImageIcon(site.icon);
   return Object.freeze({ ...site, ...(icon === undefined ? {} : { icon }) });
 }
 
-/** The palette every card of `site` draws, including an app icon's wash. */
+/** The palette every card of `site` draws. */
 export function socialImageSitePalette(site: SocialImageSite): SocialImagePalette {
-  const art = tileArt({ description: site.description, domain: site.domain, title: site.name, ...(site.icon === undefined ? {} : { icon: site.icon }) }, site.name);
-  return socialImagePalette(site.theme ?? {}, art.type === "app" ? art.icon.hue : undefined);
+  return socialImagePalette(site.theme ?? {}, undefined, site.palette);
 }
 
 /** Two sites whose cards look alike. */
@@ -2641,6 +2445,10 @@ export function socialImageLookAlikes(
   const pairs: SocialImageLookAlike[] = [];
   for (const [index, first] of palettes.entries()) {
     for (const second of palettes.slice(index + 1)) {
+      // Sites that share a Design Kit palette share it on the web too; their
+      // cards differ by mark and name, as their headers do.
+      const shared = sites[index]?.palette;
+      if (shared !== undefined && sites[palettes.indexOf(second)]?.palette === shared) continue;
       const distance = socialImagePaletteDistance(first.palette, second.palette);
       if (distance < minimum) pairs.push({ distance, first: first.name, second: second.name });
     }
@@ -2681,8 +2489,11 @@ export function socialImageSiteDetails(
     ...(page.headline === undefined ? {} : { headline: page.headline }),
     ...(site.keepTogether === undefined ? {} : { keepTogether: site.keepTogether }),
     ...(page.layout === undefined ? {} : { layout: page.layout }),
+    ...(site.brand === undefined ? {} : { brand: site.brand }),
+    ...(site.brandMark === undefined ? {} : { brandMark: site.brandMark }),
     ...(site.icon === undefined ? {} : { icon: site.icon }),
     ...(site.mark === undefined ? {} : { mark: site.mark }),
+    ...(site.palette === undefined ? {} : { palette: site.palette }),
     ...(site.theme === undefined ? {} : { theme: site.theme }),
   };
 }

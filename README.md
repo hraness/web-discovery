@@ -11,7 +11,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.12.0"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.13.0"
   }
 }
 ```
@@ -247,32 +247,32 @@ export default function OpenGraphImage() {
 }
 ```
 
-The card comes in two layouts. The product layout puts a large icon tile on the left and, beside it, the name, a description of up to three lines, and the domain. The page layout puts a small lockup of the icon, the name, and the domain at the top, the eyebrow above a large headline, and the description beneath it. A card uses the page layout when you pass a `headline` that differs from `title`, and the product layout otherwise. Pass `layout: "product"` or `layout: "page"` to choose.
+The card looks like a crop of the site's own page: its sticky header across the top, and the hero beneath it. The header band carries the brand mark and product name in the Design Kit metallic foil on the left and the domain on the right, over a hairline. The body has the site background, an eyebrow, a large Nebula Sans headline, and a muted description, in the site's own palette.
 
-This is a visible change for cards that pass a page title such as `"How Example works | Example"` without a `headline`. Before v0.10.0 the card showed that title as a large headline. It now uses the product layout and shows the title, without its brand segment, in the name slot, in up to three lines at 48 pixels or larger, then ends it in an ellipsis. Pass `layout: "page"` to keep a headline-first card.
+A home card sets the site tagline (`description`) as the headline. A page card sets `headline` and puts `description` beneath it. A card is a page card when you pass a `headline` that differs from `title`; pass `layout: "product"` or `layout: "page"` to choose. A home card that passes its hero headline as `headline` with `layout: "product"` shows the tagline beneath it, as the hero does.
 
 The headline is `headline` when you pass it. Otherwise it is `title` with one trailing brand segment removed, such as ` | Example` or ` · example.com`, when that segment matches the eyebrow, the domain, or the domain without its last label (`example`), ignoring case. Other titles appear unchanged.
 
-Pass `icon` to show your product icon in the tile:
+Pass the site's Design Kit palette, its header mark, and the product name as the header shows it:
 
 ```tsx
 createSocialImageResponse({
-  description: "Convert CSV files to charts in your browser.",
-  domain: "example.com",
-  icon: { kind: "mark", src: "data:image/svg+xml,..." },
-  theme: { accent: "#2474D4" },
-  title: "Example",
+  brand: "Gobstopper",
+  brandMark: "<svg viewBox=\"0 0 24 24\">...</svg>",
+  description: "Compacts long agent sessions.",
+  domain: "gobstopper.sh",
+  palette: "tokyo-night",
+  title: "Gobstopper",
 });
 ```
 
-`src` must be a `data:` URL holding an SVG or a base64 PNG. The card throws before rendering for any other value, including remote URLs and file paths. Without `icon`, the tile shows your `mark` element in white, or the first letter of the title.
+`palette` is one of `catppuccin`, `gruvbox`, `rose-pine`, `tokyo-night`, or `paper` (`socialImagePaletteNames`). The card uses that palette's light-theme background, header surface, hairline, text, and muted colors from Design Kit's `palette-system.css`. A site on its own colors passes `theme` instead, or alongside a palette to override single colors: `{ background, foreground, muted, headerBackground, line }`, each a six-digit hex color. Without `headerBackground`, the header band is the background deepened slightly toward the foreground.
 
-Every icon sits in the tile by one rule:
+`brandMark` is the same monochrome glyph the site header paints in foil: SVG markup, or a `data:` URL of an SVG or a base64 PNG. The card uses only its alpha, trims its empty margin, and paints it in foil at header size. It throws before rendering for any other value, including remote URLs and file paths. Without a mark, the header shows the product name alone. `brand` defaults to `title`.
 
-- A `mark` icon is a one-colour glyph. The card trims its empty margin, scales it to 60% of the tile (`SOCIAL_IMAGE_GLYPH_SHARE`), centers it, and paints it white on a tile of the theme accent, or a deep shade of the accent when white would be hard to read.
-- An `app` icon is finished art that the card never repaints. A solid shape such as a disc is trimmed to its own edge and drawn at full tile size with no tile behind it, so no rim shows. Square art that fills its canvas is clipped to the rounded tile. Other art is trimmed and set in the same 60% safe area on a white tile, or a dark tile on dark themes.
+The foil follows Design Kit's brand foil: neutral metal bands mixed from the text and header colors, a six-stop reflection at 14% at 115 degrees, and a resting highlight at the center. The card bakes it into SVG gradients and a mask, so it renders the same in Next.js `ImageResponse`, in `satori`, and in `@resvg/resvg-js`.
 
-`socialImageIconShape(icon)` returns `"square"`, `"solid"`, or `"open"`, so a site can check which case its icon falls into.
+`icon`, `mark`, `theme.accent`, and `theme.wash` are from v0.12 and still build. A `mark` icon is drawn as a `brandMark`. An `app` icon is drawn as it is, at the same size, in the header. The accent and wash are ignored, because no marketing site draws them. `socialImageIconShape(icon)` still reports whether an icon is `"square"`, `"solid"`, or `"open"`.
 
 Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on the first or last line, and a two-word name such as "Puerto Rico" stays together unless that would strand the last word, in which case the break moves earlier ("Ley 60 / en Puerto Rico guide"). A headline that would start with one short word moves the next word up instead: "Wordcell vs / Supermemory", not "Wordcell / vs Supermemory". A description is cut before an em or en dash rather than after it, and a product description keeps its standard size and two-line limit, ending at a clause.
 
@@ -280,7 +280,7 @@ To keep a longer name on one line, list it in `keepTogether` on the site or the 
 
 The card sets typography in the domain-free text fields. Straight quotes in the headline, description, eyebrow, and name become curly quotes, and apostrophes in contractions and possessives become ’ ("Lovelace’s", "ALGAL’s"). A hyphen between two ascending numbers of similar length becomes an en dash ("2024–2025", "10–20"). URLs, domains, paths, code-like tokens such as `file.ts` or `a_b`, and text in backticks stay as written. `socialImageTypography(text)` applies the same rules to any string.
 
-- **Headline.** A page headline is set at 80 pixels on one or two lines. Only a headline that cannot fit two lines at 80 pixels is set smaller, at the largest of 62 to 46 pixels where it fits in up to three lines.
+- **Headline.** A home card sets its tagline as large as fits two lines, from 80 to 64 pixels, or three lines from 60 to 48 pixels. A page headline is set at 80 pixels on one or two lines. Only a headline that cannot fit two lines at 80 pixels is set smaller, at the largest of 62 to 46 pixels where it fits in up to three lines.
 - **Description.** A description that does not fit ends at its last whole sentence or clause that does, never on a word such as "and". The card ends it with an ellipsis only when no clause fits.
 - **Eyebrow.** The card drops the eyebrow when the headline already opens with it, ignoring case: "Introducing" over "Introducing Example", or "Docs" over "Documentation".
 - **Placeholders.** Bracketed placeholders are removed: `[DRAFT]`, `[WIP]`, `[TODO]`, `[TBD]`, `[TK]`, `[FIXME]`, `[placeholder]`, `[preview]`, `[coming soon]`, `[lorem ipsum]`, `[title]`, `[no title]`, `[description]`, and `[headline]`, ignoring case. A field that holds only a placeholder counts as empty. Other bracketed text, such as a work titled `[untitled]`, stays. Write `\[DRAFT]` to draw a listed word in brackets as written.
@@ -297,6 +297,7 @@ expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual(
 | Code | Reported when |
 | --- | --- |
 | `headline-reduced`, `headline-three-lines`, `headline-clamped` | The headline is set smaller, needs three lines, or ends in an ellipsis. |
+| `home-headline-three-lines` | A home card's tagline needs three lines. Pass the site's short hero headline as `headline` with `layout: "product"`. |
 | `description-shortened`, `description-clamped` | The description ends at an earlier clause, or in an ellipsis. |
 | `description-reduced` | The description fits only below its standard size. Shorten it. |
 | `description-repeats-tagline` | A page card's description is the site tagline. `socialImageSiteDetails` passes the tagline as `tagline`. |
@@ -307,7 +308,7 @@ expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual(
 
 `strict: true` throws on the codes that mean the copy changed to fit. It ignores the review codes added in v0.12.0 (`description-reduced`, `description-repeats-tagline`, `description-trailing-ellipsis`, `eyebrow-missing`, and `eyebrow-repeats-headline`), so a strict build keeps passing after the upgrade.
 
-The brand color is mixed into the whole background, and the gradient deepens toward a paler wash of it in the far corner, so two sites that share a background token read as different hues side by side. The wash is `theme.wash` when you pass it, else the main color of an `app` icon, else the accent. The accent-coloured domain and eyebrow are darkened or lightened until they meet a 4.5:1 contrast ratio against every part of the background.
+The eyebrow, description, and domain use the palette's muted color, and the headline its foreground. Each is darkened or lightened until it meets 7:1 (headline) or 4.5:1 (muted text) against both the header band and the body.
 
 ### Keep sites apart in a feed
 
@@ -319,20 +320,7 @@ import { socialImageLookAlikes } from "@hraness/web-discovery/social-image/card"
 expect(socialImageLookAlikes([socialSite, ...otherSites])).toEqual([]);
 ```
 
-The package holds no site's brand colors, so it cannot check the portfolio itself. The v2.1 review found five look-alike groups: System One, Sloptrade, and Clankdar (slate and navy); xcb and AI Charts (blue); Sponge, PeopleBlade, and TextButler (sage); Soulscrape, Slopcamera, and one private site (periwinkle); and Rough Day and Stripe History (pale blue). Keep the first site of each group as it is and give the others a `theme.wash`:
-
-| Site | `theme.wash` |
-| --- | --- |
-| Sloptrade | `#22C322` (green) |
-| Clankdar | `#C322B6` (magenta) |
-| AI Charts | `#A145A1` (plum) |
-| PeopleBlade | `#34B253` (leaf green) |
-| TextButler | `#C3224B` (crimson) |
-| The private periwinkle site | `#9BC322` (lime) |
-| Slopcamera | `#5822C3` (violet) |
-| Rough Day | `#22C3C3` (teal) |
-
-On the default background each of these washes sits at least the minimum distance from every other site's v2.1 card. A site with its own `theme.background` should confirm the result with `socialImageLookAlikes`.
+Sites that share a Design Kit palette share it on the web too, so `socialImageLookAlikes` does not flag them: their cards differ by mark and name, as their headers do. It compares sites on different palettes, or with their own `theme` colors.
 
 The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
 
@@ -374,9 +362,9 @@ import { defineSocialImageSite } from "@hraness/web-discovery/social-image";
 export const socialSite = defineSocialImageSite({
   description: "Convert CSV files to charts in your browser.",
   domain: "example.com",
-  icon: { kind: "app", src: "data:image/png;base64,..." },
+  brandMark: exampleMarkSvg, // the glyph the site header paints in foil
   name: "Example",
-  theme: { accent: "#2474D4", background: "#F8F7F4", foreground: "#1C1A18", muted: "#5E5A55" },
+  palette: "paper",
 });
 ```
 
@@ -427,7 +415,9 @@ v0.11.1 fixes typechecking for consumers whose `tsconfig.json` sets `erasableSyn
 
 v0.12.0 adds curly quotes and en dashes, keeps a short word off a headline's first line, adds `keepTogether` names, route-derived eyebrows (`path`, `eyebrow: false`, and `socialImageEyebrow`), review findings with codes in `socialImageFit`, palette distance checks, and lets real bracketed titles such as `[untitled]` through. Existing options behave as before, and `strict` throws on no new cases.
 
-`defineSocialImageSite` checks the name, domain, description, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
+v0.13.0 redraws the card to match the marketing sites: the sticky header with the foil mark and name over the hero, in the site's Design Kit palette, with no tile or wash. Home cards set the tagline as the headline. It adds `brand`, `brandMark`, `palette`, `theme.headerBackground`, `theme.line`, `socialImagePaletteNames`, and the `home-headline-three-lines` finding. v0.12 options still build: `icon` and `mark` draw in the header, and `theme.accent` and `theme.wash` are ignored.
+
+`defineSocialImageSite` checks the name, domain, description, brand mark, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
 ## Pick an import
 

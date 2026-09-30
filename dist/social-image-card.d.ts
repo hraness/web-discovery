@@ -1,5 +1,7 @@
 import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/social";
 import type { ReactElement, ReactNode } from "react";
+import type { SocialImageFoil } from "./social-image-foil.js";
+import { DESIGN_KIT_LIGHT_PALETTES } from "./social-image-palettes.generated.js";
 export declare const CARD_WIDTH = 1200;
 export declare const CARD_HEIGHT = 630;
 export declare const CARD_PADDING = 60;
@@ -12,17 +14,31 @@ export declare const socialImageMarks: {
 };
 export type SocialImageMark = (typeof socialImageMarks)[keyof typeof socialImageMarks];
 export type SocialImageTheme = Readonly<{
+    /** The product primary. Cards no longer draw it; kept for v0.12 themes. */
     accent: string;
+    /** The page background the card body sits on. */
     background: string;
+    /** Headline and body text, and the ink the brand foil is mixed from. */
     foreground: string;
+    /**
+     * The sticky header band. Defaults to the Design Kit palette's header
+     * tint, or to `background` deepened slightly toward `foreground`.
+     */
+    headerBackground?: string;
+    /** The hairline under the header band. Defaults from the palette or theme. */
+    line?: string;
+    /** Eyebrow, description, and domain text. */
     muted: string;
     /**
-     * The brand color the background wash is tinted toward. Defaults to the
-     * main color of an `app` icon, else `accent`, so two sites that share a
-     * background token still get cards of their own.
+     * Legacy (v0.12): Cards since v0.13 draw the site's flat background with no
+     * brand wash. Accepted and ignored so v0.12 themes still build.
      */
     wash?: string;
 }>;
+/** A light-theme palette from Design Kit's `palette-system.css`. */
+export type SocialImagePaletteName = keyof typeof DESIGN_KIT_LIGHT_PALETTES;
+/** The palette names a card accepts, in Design Kit's order. */
+export declare const socialImagePaletteNames: readonly SocialImagePaletteName[];
 export declare const plainSocialImageTheme: {
     readonly accent: "#2457A6";
     readonly background: "#FFFFFF";
@@ -30,9 +46,11 @@ export declare const plainSocialImageTheme: {
     readonly muted: "#666666";
 };
 /**
- * A product icon as a `data:` URL. `mark` is a single-colour glyph that the
- * card repaints on a tile of the theme accent; `app` is a finished app icon
- * that fills the tile with its own colours.
+ * A product icon as a `data:` URL.
+ *
+ * Legacy (v0.12): Pass `brandMark` instead. A `mark` icon is drawn exactly like a
+ * `brandMark`: its alpha painted in the brand foil in the header. An `app`
+ * icon is drawn as it is, at the same size, in place of the foil mark.
  */
 export type SocialImageIcon = Readonly<{
     kind: "app" | "mark";
@@ -40,6 +58,16 @@ export type SocialImageIcon = Readonly<{
 }>;
 export type SocialImageLayout = "page" | "product";
 export type SocialImageDetails = Readonly<{
+    /**
+     * The product name as the site header shows it, drawn in foil beside the
+     * brand mark. Defaults to the brand segment of `title`, else `title`.
+     */
+    brand?: string;
+    /**
+     * The monochrome product mark the site header paints in foil: SVG markup,
+     * or a `data:` URL of an SVG or PNG. Only its alpha is used.
+     */
+    brandMark?: string;
     description: string;
     domain: string;
     /**
@@ -65,14 +93,26 @@ export type SocialImageDetails = Readonly<{
      * domain, so an SEO page title does not become the card headline verbatim.
      */
     headline?: string;
+    /** Legacy (v0.12): Pass `brandMark`. See {@link SocialImageIcon}. */
     icon?: SocialImageIcon;
     /**
-     * "product" draws a large icon tile beside the name and description.
-     * "page" draws a small product lockup above the headline. Defaults to
-     * "page" when `headline` is set and differs from `title`.
+     * "product" is a home card: the tagline (`description`) is the headline.
+     * "page" is a subpage card: `headline` with `description` beneath it.
+     * Both share one design, the site's sticky header over its hero.
+     * Defaults to "page" when `headline` is set and differs from `title`.
      */
     layout?: SocialImageLayout;
+    /**
+     * Legacy (v0.12): Pass `brandMark`. A React node drawn in the header in the
+     * foreground color, without foil.
+     */
     mark?: ReactNode;
+    /**
+     * The site's Design Kit palette, such as "tokyo-night". Sets the
+     * background, header band, hairline, and text colors of its light theme;
+     * `theme` fields override single colors.
+     */
+    palette?: SocialImagePaletteName;
     /**
      * Throw instead of adapting when the copy does not fit as written: a
      * description that has to be shortened, a three-line headline, characters
@@ -95,44 +135,52 @@ export type SocialImageCard = Readonly<{
 export declare function socialImageContrastRatio(first: string, second: string): number;
 /** Resolved colors for one card. Every text color meets its contrast rule. */
 export type SocialImagePalette = Readonly<{
-    /** Base of the background gradient. */
+    /** The body background: the site's flat page background. */
     background: string;
-    /** Far end of the background gradient: a pale wash of the brand color. */
+    /** The header band color; the second color a thumbnail shows. */
     backgroundTint: string;
     dark: boolean;
+    /** The brand foil for the mark and wordmark, mixed from `foreground` and `header`. */
+    foil: SocialImageFoil;
     foreground: string;
-    /** Knockout color for single-colour marks and letters on the tile. */
+    /** Legacy (v0.12): Tile knockout color; cards since v0.13 draw no tile. */
     glyph: string;
+    /** The sticky header band. */
+    header: string;
+    /** The hairline under the header band. */
+    headerLine: string;
     muted: string;
-    /** Accent adjusted to at least 4.5:1 for the domain and kicker text. */
+    /** Accent adjusted to at least 4.5:1 against the background. */
     primaryText: string;
-    /** The accent as the tile gradient runs from `tileTop` to `tileBottom`. */
+    /** Legacy (v0.12): Tile gradient end; cards since v0.13 draw no tile. */
     tileBottom: string;
+    /** Legacy (v0.12): Tile gradient start; cards since v0.13 draw no tile. */
     tileTop: string;
     /** Every background color text can sit on, for contrast checks. */
     surfaces: readonly string[];
-    /** The brand color behind the background wash and the icon glow. */
+    /** Legacy (v0.12): The v0.12 wash color; cards since v0.13 draw no wash. */
     wash: string;
 }>;
 /**
- * Resolves a card theme into the colors the card draws. The accent is the
- * product primary. A mid-tone background moves toward black or white until
- * body text can reach 7:1.
+ * Resolves a card theme into the colors the card draws: the site's flat
+ * background, its header band and hairline, text colors that meet their
+ * contrast rules, and the brand foil. A mid-tone background moves toward
+ * black or white until body text can reach 7:1.
  */
 export declare function socialImagePalette(theme?: Partial<SocialImageTheme>, 
-/** Wash color used when the theme sets none, such as an app icon's hue. */
-brand?: string): SocialImagePalette;
+/** Legacy (v0.12): The v0.12 wash color; ignored by the card. */
+brand?: string, 
+/** A Design Kit palette whose light colors fill in unset theme colors. */
+palette?: SocialImagePaletteName): SocialImagePalette;
 /**
  * The smallest `socialImagePaletteDistance` at which two sites' cards read as
  * different sites in a feed of thumbnails: about twice a just-noticeable
- * difference. Washes 30 degrees of hue apart on one base clear it.
+ * difference.
  */
 export declare const SOCIAL_IMAGE_MIN_PALETTE_DISTANCE = 5;
 /**
  * How far apart two resolved card palettes look: the mean CIE76 ΔE of the
- * background base and its washed far corner, the colors that fill a
- * thumbnail. Below `SOCIAL_IMAGE_MIN_PALETTE_DISTANCE` two sites' cards read
- * as one site; give one of them a different `theme.wash`.
+ * body background and the header band, the colors that fill a thumbnail.
  */
 export declare function socialImagePaletteDistance(first: SocialImagePalette, second: SocialImagePalette): number;
 /**
@@ -185,7 +233,7 @@ export type SocialImageIconShape = "open" | "solid" | "square";
  */
 export declare function socialImageIconShape(icon: SocialImageIcon): SocialImageIconShape;
 export declare function parseSocialImageIcon(value: unknown): SocialImageIcon;
-/** Share of a tile's side that a `mark` glyph's own bounds fill. */
+/** Legacy (v0.12): Share of a v0.12 tile's side that a `mark` glyph filled; cards since v0.13 draw no tile. */
 export declare const SOCIAL_IMAGE_GLYPH_SHARE = 0.6;
 /**
  * The default eyebrow for a page at `path`: its first route segment as a
@@ -260,7 +308,7 @@ export type SocialImageFit = Readonly<{
     removed: readonly SocialImageRemoval[];
 }>;
 /** Stable identifiers for the findings `socialImageFit` reports. */
-export type SocialImageFindingCode = "description-clamped" | "description-reduced" | "description-repeats-tagline" | "description-shortened" | "description-trailing-ellipsis" | "eyebrow-missing" | "eyebrow-repeats-headline" | "headline-clamped" | "headline-reduced" | "headline-three-lines" | "placeholder" | "unsupported-characters";
+export type SocialImageFindingCode = "description-clamped" | "description-reduced" | "description-repeats-tagline" | "description-shortened" | "description-trailing-ellipsis" | "eyebrow-missing" | "eyebrow-repeats-headline" | "headline-clamped" | "headline-reduced" | "headline-three-lines" | "home-headline-three-lines" | "placeholder" | "unsupported-characters";
 export type SocialImageFinding = Readonly<{
     code: SocialImageFindingCode;
     message: string;
@@ -278,13 +326,20 @@ export declare function createSocialImageCard(details: SocialImageDetails): Soci
  * site renders. The card design itself stays in this package.
  */
 export type SocialImageSite = Readonly<{
+    /** The product name as the site header shows it. Defaults to `name`. */
+    brand?: string;
+    /** The header's monochrome brand mark: SVG markup or a data: URL. */
+    brandMark?: string;
     description: string;
     domain: string;
+    /** Legacy (v0.12): pass `brandMark`. */
     icon?: SocialImageIcon;
     /** Names no card on the site may break across lines, such as "Claude Code Router". */
     keepTogether?: readonly string[];
     mark?: SocialImageDetails["mark"];
     name: string;
+    /** The site's Design Kit palette. See {@link SocialImageDetails.palette}. */
+    palette?: SocialImagePaletteName;
     theme?: Partial<SocialImageTheme>;
 }>;
 /** Per-page copy layered over a site. Omit it for the site's home card. */
@@ -301,7 +356,7 @@ export type SocialImagePage = Readonly<{
     path?: string;
 }>;
 export declare function defineSocialImageSite(site: SocialImageSite): SocialImageSite;
-/** The palette every card of `site` draws, including an app icon's wash. */
+/** The palette every card of `site` draws. */
 export declare function socialImageSitePalette(site: SocialImageSite): SocialImagePalette;
 /** Two sites whose cards look alike. */
 export type SocialImageLookAlike = Readonly<{
