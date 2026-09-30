@@ -441,7 +441,7 @@ describe("shared social images", () => {
     })).toThrow(/external/u);
   });
 
-  test("renders a legacy mark, or the first letter, when there is no icon", () => {
+  test("renders a legacy mark, or the name alone, when there is no brand mark", () => {
     const legacy = createSocialImageCard({
       description: "A card",
       domain: "example.com",
@@ -459,20 +459,19 @@ describe("shared social images", () => {
     });
     expect(JSON.stringify(node.element)).toContain("custom");
 
+    // With no mark the header shows the wordmark alone, as a site header does.
     fc.assert(fc.property(word, (title) => {
       const card = createSocialImageCard({ description: "A card", domain: "example.com", title });
-      expect(renderedText(card.element)).toContain(title.slice(0, 1));
+      expect(renderedText(card.element)).toContain(title);
+      expect(JSON.stringify(card.element)).not.toContain("data:image");
     }), { numRuns: 30 });
   });
 
-  test("never lets the page ghost touch a text line", () => {
+  test("draws no page ghost, and no text line touches another", () => {
     const intersects = (
       a: Readonly<{ height: number; width: number; x: number; y: number }>,
       b: Readonly<{ height: number; width: number; x: number; y: number }>,
-      gap: number,
-    ) => a.x < b.x + b.width + gap && b.x < a.x + a.width + gap
-      && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap;
-    let ghosts = 0;
+    ) => a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
     fc.assert(fc.property(
       sentence,
       sentence,
@@ -488,15 +487,15 @@ describe("shared social images", () => {
           layout: "page",
           title: "Example",
         });
+        expect(geometry.ghost).toBeUndefined();
         expect(geometry.textBoxes.length).toBeGreaterThan(0);
-        if (geometry.ghost === undefined) return;
-        ghosts += 1;
-        for (const box of geometry.textBoxes) {
-          expect(intersects(geometry.ghost, box, 24)).toBe(false);
+        for (const [index, box] of geometry.textBoxes.entries()) {
+          expect(box.x + box.width).toBeLessThanOrEqual(1200);
+          expect(box.y + box.height).toBeLessThanOrEqual(630);
+          for (const other of geometry.textBoxes.slice(index + 1)) expect(intersects(box, other)).toBe(false);
         }
       },
     ), { numRuns: 80 });
-    expect(ghosts).toBeGreaterThan(0);
   });
 
   test("meets the contrast thresholds for any theme", () => {
@@ -642,7 +641,7 @@ describe("v0.11 card copy and art rules", () => {
       "Query the derived graph",
       "Run a derived-graph query against the knowledge base to find every decision that touches a file, and the reviews, owners, and tests that depend on it across every repository.",
     ));
-    expect(fit.description?.cut).toBe("clause");
+    expect(fit.description?.cut).not.toBe("ellipsis");
     expect(fit.description?.lines.join(" ")).toBe("Run a derived-graph query against the knowledge base to find every decision that touches a file.");
     expect(fit.issues.some((issue) => issue.includes("shortened"))).toBe(true);
 
@@ -668,22 +667,28 @@ describe("v0.11 card copy and art rules", () => {
     }), { numRuns: 60 });
   });
 
-  test("keeps product descriptions at the standard size on two lines, cutting at a clause", () => {
-    const fit = socialImageFit({
-      ...base,
-      description: "Oh is open-source memory for agents that stores each fact with its sources and every change in a history you can replay.",
-      title: "Oh",
-    });
+  test("sets the home tagline as the headline, and keeps a hero description at the standard size", () => {
+    const long = "Oh is open-source memory for agents that stores each fact with its sources and every change in a history you can replay.";
+    const tagline = socialImageFit({ ...base, description: "Agent memory that shows its work.", title: "Oh" });
+    expect(tagline.layout).toBe("product");
+    expect(tagline.description).toBeUndefined();
+    expect(tagline.headline.lines.join(" ")).toBe("Agent memory that shows its work.");
+    expect(tagline.issues).toEqual([]);
+    const wordy = socialImageFit({ ...base, description: long, title: "Oh" });
+    expect(wordy.findings.map(({ code }) => code)).toContain("home-headline-three-lines");
+    // A home card with the site's hero headline keeps the tagline beneath it.
+    const fit = socialImageFit({ ...base, description: long, headline: "Agent memory that shows its work.", layout: "product", title: "Oh" });
     expect(fit.layout).toBe("product");
+    expect(fit.headline.lines.join(" ")).toBe("Agent memory that shows its work.");
     expect(fit.description?.lines.length).toBe(2);
-    expect(fit.description?.size).toBeGreaterThanOrEqual(36);
-    expect(fit.description?.cut).toBe("clause");
-    expect(fit.description?.lines.join(" ")).toBe("Oh is open-source memory for agents that stores each fact with its sources.");
+    expect(fit.description?.size).toBeGreaterThanOrEqual(30);
+    // The whole description fits in two lines under a one-line hero headline.
+    expect(fit.description?.cut).toBe("none");
 
     const word = fc.stringMatching(/^[a-z]{3,9}$/u);
     const sentence = fc.array(word, { minLength: 3, maxLength: 40 }).map((words) => `${words.join(" ")}.`);
     fc.assert(fc.property(sentence, (description) => {
-      const product = socialImageFit({ ...base, description, title: "Example" });
+      const product = socialImageFit({ ...base, description, headline: "Example hero", layout: "product", title: "Example" });
       expect(product.description?.lines.length ?? 0).toBeLessThanOrEqual(2);
     }), { numRuns: 40 });
   });
@@ -718,7 +723,7 @@ describe("v0.11 card copy and art rules", () => {
     expect(socialImageFit(socialImageSiteDetails(site, { headline: "Set up Example" })).description).toBeUndefined();
     const text = renderedText(createSocialImageCard(socialImageSiteDetails(site, { headline: "Set up Example" })).element).join(" ");
     expect(text).not.toContain("Compacts long agent sessions");
-    expect(socialImageFit(socialImageSiteDetails(site)).description?.lines.join(" ")).toBe("Compacts long agent sessions");
+    expect(socialImageFit(socialImageSiteDetails(site)).headline.lines.join(" ")).toBe("Compacts long agent sessions");
   });
 
   test("drops an eyebrow that the headline already opens with", () => {
@@ -755,15 +760,22 @@ describe("v0.11 card copy and art rules", () => {
     expect(long.headline.size).toBeGreaterThanOrEqual(30);
   });
 
-  test("tints the page wash from each site's brand color", () => {
+  test("draws the header band from the site palette, and ignores the legacy wash", () => {
     const paper = { background: "#FFF8E7", foreground: "#1F1B16", muted: "#5F564B" };
     const red = socialImagePalette({ ...paper, accent: "#B43A1D" });
     const blue = socialImagePalette({ ...paper, accent: "#2457A6" });
-    expect(red.backgroundTint).not.toBe(blue.backgroundTint);
-    expect(red.wash).toBe("#B43A1D");
-    // An explicit wash wins, and an app icon's color is used when there is none.
-    expect(socialImagePalette({ ...paper, accent: "#2457A6", wash: "#176B5B" }).wash).toBe("#176B5B");
-    expect(socialImagePalette({ ...paper, accent: "#2457A6" }, "#176B5B").wash).toBe("#176B5B");
+    expect(red.header).toBe(blue.header);
+    expect(red.background).toBe(blue.background);
+    expect(socialImagePalette({ ...paper, accent: "#2457A6", wash: "#176B5B" }).header).toBe(blue.header);
+    expect(socialImagePalette({ ...paper, headerBackground: "#EEE4CC" }).header).toBe("#EEE4CC");
+    // A Design Kit palette fills the colors a theme leaves unset.
+    const tokyo = socialImagePalette({}, undefined, "tokyo-night");
+    expect(tokyo.background.toLowerCase()).toBe("#e1e2e7");
+    // The header band is a slightly deeper step of the same tint.
+    expect(tokyo.header).not.toBe(tokyo.background);
+    expect(socialImageContrastRatio(tokyo.foreground, tokyo.header)).toBeLessThan(socialImageContrastRatio(tokyo.foreground, tokyo.background));
+    expect(tokyo.headerLine).not.toBe(tokyo.header);
+    expect(socialImagePalette({ background: "#FFFFFF" }, undefined, "tokyo-night").background).toBe("#FFFFFF");
     fc.assert(fc.property(hex, hex, hex, hex, hex, (accent, background, foreground, muted, wash) => {
       const palette = socialImagePalette({ accent, background, foreground, muted, wash });
       for (const surface of palette.surfaces) {
@@ -789,22 +801,34 @@ describe("v0.11 card copy and art rules", () => {
     expect(socialImageIconShape({ kind: "mark", src: svgMark })).toBe("open");
   });
 
-  test("draws solid app art without a tile rim, and marks in the 60% safe area", () => {
-    const imgs = (node: unknown): { height: number; width: number }[] => {
+  test("draws the brand mark in baked foil at header size, and a legacy icon as a monochrome mark", () => {
+    const imgs = (node: unknown): { height: number; src: string; width: number }[] => {
       if (Array.isArray(node)) return node.flatMap(imgs);
       if (!isNode(node)) return [];
       const props = node.props as { children?: unknown; height?: number; src?: string; width?: number };
       const own = typeof props.src === "string" && typeof props.width === "number" && typeof props.height === "number"
-        ? [{ height: props.height, width: props.width }]
+        ? [{ height: props.height, src: props.src, width: props.width }]
         : [];
       return [...own, ...imgs(props.children)];
     };
+    const decode = (src: string) => src.startsWith("data:image/svg+xml;base64,")
+      ? atob(src.slice("data:image/svg+xml;base64,".length))
+      : decodeURIComponent(src.slice(src.indexOf(",") + 1));
+    const branded = createSocialImageCard({ ...base, brandMark: "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='10'/></svg>", description: "Memory for agents" });
+    const [mark] = imgs(branded.element);
+    expect(mark).toBeDefined();
+    expect(Math.max(mark?.width ?? 0, mark?.height ?? 0)).toBeGreaterThanOrEqual(44);
+    expect(Math.max(mark?.width ?? 0, mark?.height ?? 0)).toBeLessThanOrEqual(64);
+    const svg = decode(mark?.src ?? "");
+    expect(svg).toContain("<mask");
+    expect(svg).toContain("linearGradient");
+    expect(svg).toContain("radialGradient");
+    // A legacy app icon still builds; it is drawn in the header, not as a tile.
     const disc = svgUrl("<circle cx='12' cy='12' r='12' fill='#b43a1d'/>");
-    const product = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "app", src: disc } });
-    // The disc is drawn at the full 304px tile size.
-    expect(imgs(product.element).some((image) => image.width === 304 && image.height === 304)).toBe(true);
-    const mark = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "mark", src: svgMark } });
-    expect(imgs(mark.element).some((image) => Math.max(image.width, image.height) === Math.round(304 * 0.6))).toBe(true);
+    const legacy = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "app", src: disc } });
+    expect(imgs(legacy.element).every((image) => Math.max(image.width, image.height) <= 64)).toBe(true);
+    const marked = createSocialImageCard({ ...base, description: "Memory for agents", icon: { kind: "mark", src: svgMark } });
+    expect(imgs(marked.element).length).toBeGreaterThan(0);
   });
 
   test("drops emoji and characters the fonts cannot draw, deterministically", () => {
@@ -911,7 +935,7 @@ describe("v0.12 typography, breaks, eyebrows, and palettes", () => {
   test("keeps named phrases and no-break spaces on one line", () => {
     const named = socialImageFit(page("xcb vs Claude Code Router", { keepTogether: ["claude code router"] }));
     expect(named.headline.lines).toEqual(["xcb vs", "Claude Code Router"]);
-    const nbsp = socialImageFit({ ...base, description: "Notes", layout: "product", title: "xcb vs Claude Code Router" });
+    const nbsp = socialImageFit({ ...base, description: "xcb vs Claude Code Router", layout: "product", title: "Example" });
     expect(nbsp.headline.lines.some((line) => line.includes("Claude Code Router"))).toBe(true);
     expect(nbsp.headline.lines.join("")).not.toContain(" ");
     const site = defineSocialImageSite({ description: "Routes", domain: "example.com", keepTogether: ["Claude Code Router"], name: "Example" });
@@ -950,11 +974,11 @@ describe("v0.12 typography, breaks, eyebrows, and palettes", () => {
   });
 
   test("reports a reduced, tagline, or ellipsis-ended subtitle", () => {
-    const long = "Compacts long agent sessions into smaller copies that keep every decision every file.";
-    const reduced = socialImageFit({ ...base, description: long, layout: "product" });
+    const long = "Oh is open-source memory for agents that stores each fact with its sources and every change in a history you can replay.";
+    const reduced = socialImageFit({ ...base, description: long, headline: "Setup", layout: "page" });
     expect(reduced.description?.reduced).toBe(true);
     expect(reduced.findings.map(({ code }) => code)).toContain("description-reduced");
-    expect(codes({ ...base, description: "Compacts long agent sessions.", layout: "product" })).not.toContain("description-reduced");
+    expect(codes({ ...base, description: "Compacts long agent sessions.", headline: "Setup", layout: "page" })).not.toContain("description-reduced");
 
     const site = defineSocialImageSite({ description: "Memory for agents", domain: "example.com", name: "Example" });
     expect(codes(socialImageSiteDetails(site, { description: "Memory for agents.", eyebrow: "Guide", headline: "Setup" }))).toContain("description-repeats-tagline");
@@ -978,23 +1002,15 @@ describe("v0.12 typography, breaks, eyebrows, and palettes", () => {
   });
 
   test("measures palette distance and flags look-alike sites", () => {
-    const site = (name: string, wash: string) => defineSocialImageSite({ description: "x", domain: `${name}.com`, name, theme: { wash } });
-    const a = site("a", "#2265C3");
+    const site = (name: string, background: string) => defineSocialImageSite({ description: "x", domain: `${name}.com`, name, theme: { background } });
+    const a = site("a", "#E1E2E7");
     expect(socialImagePaletteDistance(socialImageSitePalette(a), socialImageSitePalette(a))).toBe(0);
-    const lookAlikes = socialImageLookAlikes([a, site("b", "#2468C0"), site("c", "#B23473")]);
+    const lookAlikes = socialImageLookAlikes([a, site("b", "#E0E2E8"), site("c", "#FBF1C7")]);
     expect(lookAlikes.map(({ first, second }) => `${first}~${second}`)).toEqual(["a~b"]);
     expect(lookAlikes[0]?.distance).toBeLessThan(SOCIAL_IMAGE_MIN_PALETTE_DISTANCE);
-    // The README's recommended washes for the sites that looked alike in the
-    // v2.1 review are distinct from one another and from each group's anchor.
-    const recommended = [
-      ["sysone", "#476185"], ["xcb", "#2265C3"], ["sponge", "#567C8F"], ["soulscrape", "#2653D9"], ["stripe-history", "#2680D9"],
-      ["sloptrade", "#22C322"], ["clankdar", "#C322B6"], ["aicharts", "#A145A1"], ["peopleblade", "#34B253"],
-      ["textbutler", "#C3224B"], ["private", "#9BC322"], ["slopcamera", "#5822C3"], ["roughday", "#22C3C3"],
-    ] as const;
-    const anchors = new Set(["sysone", "xcb", "sponge", "soulscrape", "stripe-history"]);
-    const moved = socialImageLookAlikes(recommended.map(([name, wash]) => site(name, wash)))
-      .filter(({ first, second }) => !(anchors.has(first) && anchors.has(second)));
-    expect(moved).toEqual([]);
+    // Sites on one Design Kit palette share it on the web, so they are not flagged.
+    const kit = (name: string, palette: "gruvbox" | "tokyo-night") => defineSocialImageSite({ description: "x", domain: `${name}.com`, name, palette });
+    expect(socialImageLookAlikes([kit("oh", "gruvbox"), kit("sponge", "gruvbox"), kit("xcb", "tokyo-night")])).toEqual([]);
     fc.assert(fc.property(fc.integer({ min: 0, max: 0xffffff }), fc.integer({ min: 0, max: 0xffffff }), (x, y) => {
       const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`;
       const first = socialImageSitePalette(site("x", hex(x)));
