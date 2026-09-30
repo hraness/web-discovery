@@ -714,7 +714,7 @@ export function socialImageTypography(text: string): string {
     .map((part, index) => index % 2 === 1
       ? part
       : part.replace(/\S+/gu, (token) => {
-        const core = token.replace(/^["'“‘(]+|["'”’).,;:!?]+$/gu, "");
+        const core = trimEnds(token, "\"'“‘(", "\"'”’).,;:!?");
         return CODE_LIKE.test(core) ? token : curlToken(token);
       }))
     .join("");
@@ -1955,7 +1955,8 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
  * without a readable segment get none.
  */
 export function socialImageEyebrow(path: string): string | undefined {
-  const segment = path.replace(/[?#].*$/u, "").split("/").find((part) => part.length > 0);
+  const query = path.search(/[?#]/u);
+  const segment = (query === -1 ? path : path.slice(0, query)).split("/").find((part) => part.length > 0);
   if (segment === undefined) return undefined;
   let decoded = segment;
   try {
@@ -2438,11 +2439,17 @@ function fitFindings(
 
 /** Text compared without case, spacing, quote style, or closing punctuation. */
 function comparable(value: string): string {
-  return socialImageTypography(value)
-    .replace(/\s+/gu, " ")
-    .replace(/[\s.!?…]+$/u, "")
-    .trim()
-    .toLocaleLowerCase("en-US");
+  const spaced = socialImageTypography(value).replace(/\s+/gu, " ");
+  return trimEnds(spaced, "", " .!?…").trim().toLocaleLowerCase("en-US");
+}
+
+/** Strips leading characters in `head` and trailing characters in `tail`, in linear time. */
+function trimEnds(value: string, head: string, tail: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && head.includes(value.charAt(start))) start += 1;
+  while (end > start && tail.includes(value.charAt(end - 1))) end -= 1;
+  return value.slice(start, end);
 }
 
 function renderSocialImageCard(details: SocialImageDetails): RenderedCard {
