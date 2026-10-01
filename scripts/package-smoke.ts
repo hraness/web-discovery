@@ -13,7 +13,7 @@ const verificationPackages = [
   "@types/node@^24.10.0",
   "@types/react@^19.2.14",
   "@types/react-dom@^19.2.3",
-  "next@16.2.12",
+  "next@16.3.3",
   "react@19.2.3",
   "react-dom@19.2.3",
   "satori@0.33.4",
