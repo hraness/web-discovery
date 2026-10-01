@@ -22,6 +22,8 @@ bun install
 
 The package supports Next.js 16.2 through 16.x, React 19, and Node.js 20.9 or newer.
 
+TypeScript consumers can use Bundler and NodeNext module resolution.
+
 Next.js is an optional peer. Only `./social-image` needs it at runtime; the other exports work in any React or Node application.
 
 ## Describe a site once for search, social, sitemaps, and structured data
@@ -100,7 +102,6 @@ const article = {
   description: "How one image record supplies the page image, social preview, feed, and sitemap.",
   image: {
     alt: "Blue and orange modules connected across a work surface.",
-    caption: "The same image appears on the page, in social previews, and in the feed.",
     contentType: "image/webp",
     credit: "Editorial illustration by Example.",
     height: 864,
@@ -123,7 +124,7 @@ export const sitemapEntry = createArticleSitemapPath(article);
 export const atomImage = createAtomImageEnclosure(site.origin, article.image);
 ```
 
-Render that image and caption in the page's initial HTML. The social crop appears in social metadata; the visible article image appears in schema, Atom, and the image sitemap. RSS callers can add the checked byte length with `createRssImageEnclosure`.
+Render the image in the page's initial HTML. Add the optional `caption` when it explains something the image and surrounding text do not. The social crop appears in social metadata; the visible article image appears in schema, Atom, and the image sitemap. RSS callers can add the checked byte length with `createRssImageEnclosure`.
 
 Keep asset hashes, prompts, generation records, and source records in your application's own registry. The package does not read or emit them.
 
@@ -272,7 +273,7 @@ createSocialImageResponse({
 
 The foil follows Design Kit's brand foil: neutral metal bands mixed from the text and header colors, a six-stop reflection at 14% at 115 degrees, and a resting highlight at the center. The card bakes it into SVG gradients and a mask, so it renders the same in Next.js `ImageResponse`, in `satori`, and in `@resvg/resvg-js`.
 
-`icon`, `mark`, `theme.accent`, and `theme.wash` are from v0.12 and still build. A `mark` icon is drawn as a `brandMark`. An `app` icon is drawn as it is, at the same size, in the header. The accent and wash are ignored, because no marketing site draws them. `socialImageIconShape(icon)` still reports whether an icon is `"square"`, `"solid"`, or `"open"`.
+The compatibility options `icon`, `mark`, `theme.accent`, and `theme.wash` are accepted. A `mark` icon is drawn as a `brandMark`. An `app` icon is drawn as it is, at the same size, in the header. The accent and wash are ignored. `socialImageIconShape(icon)` reports whether an icon is `"square"`, `"solid"`, or `"open"`.
 
 Text is at least 30 pixels tall. The card keeps your capitalization. Lines break at whole words and are balanced to even length. No line ends on a word such as "the" or "and", a headline avoids leaving one word alone on the first or last line, and a two-word name such as "Puerto Rico" stays together unless that would strand the last word, in which case the break moves earlier ("Ley 60 / en Puerto Rico guide"). A headline that would start with one short word moves the next word up instead: "Wordcell vs / Supermemory", not "Wordcell / vs Supermemory". A description is cut before an em or en dash rather than after it, and a product description keeps its standard size and two-line limit, ending at a clause.
 
@@ -306,7 +307,7 @@ expect(socialImageFit(socialImageSiteDetails(socialSite, page)).issues).toEqual(
 | `eyebrow-repeats-headline` | The eyebrow repeats the headline's opening, so the card drops it. |
 | `placeholder`, `unsupported-characters` | Text was removed. |
 
-`strict: true` throws on the codes that mean the copy changed to fit. It ignores the review codes added in v0.12.0 (`description-reduced`, `description-repeats-tagline`, `description-trailing-ellipsis`, `eyebrow-missing`, and `eyebrow-repeats-headline`), so a strict build keeps passing after the upgrade.
+`strict: true` throws on the codes that mean the copy changed to fit. It leaves these findings for you to review: `description-reduced`, `description-repeats-tagline`, `description-trailing-ellipsis`, `eyebrow-missing`, and `eyebrow-repeats-headline`.
 
 The eyebrow, description, and domain use the palette's muted color, and the headline its foreground. Each is darkened or lightened until it meets 7:1 (headline) or 4.5:1 (muted text) against both the header band and the body.
 
@@ -322,7 +323,7 @@ expect(socialImageLookAlikes([socialSite, ...otherSites])).toEqual([]);
 
 Sites that share a Design Kit palette share it on the web too, so `socialImageLookAlikes` does not flag them: their cards differ by mark and name, as their headers do. It compares sites on different palettes, or with their own `theme` colors.
 
-The 1200 × 630 PNG embeds Nebula Sans Book and Bold from the `@hraness/design-kit/fonts/nebula-sans/social` export of Design Kit v0.5.0. The renderer fetches no remote assets and reads no files at runtime. Its layout is inline styles passed to Next.js `ImageResponse`, so you load no stylesheet for it. Pass six-digit hex theme colors to match your application.
+The 1200 × 630 PNG embeds Nebula Sans Book and Bold from Design Kit. The renderer fetches no remote assets, reads no files at runtime, and requires no stylesheet. Pass six-digit hex theme colors to match your application.
 
 Static sites without a Next.js runtime import the same layout through `@hraness/web-discovery/social-image/card`, which carries no `next` import. `createSocialImageCard` returns the React element, its embedded fonts, and the card dimensions so a checked script can rasterize with `satori` and `@resvg/resvg-js`:
 
@@ -409,16 +410,6 @@ createSiteSocialImageResponse(socialSite, {
 });
 ```
 
-v0.11.0 changes how existing cards look, with no API change: descriptions end at a clause instead of an ellipsis, page cards without a description no longer show the tagline, duplicate eyebrows, placeholders, and unsupported characters are removed, headlines keep one size for one or two lines, the background wash follows each site's brand color, and icons sit in the safe area above. The new exports are `socialImageFit`, `socialImageIconShape`, and `SOCIAL_IMAGE_GLYPH_SHARE`, plus the optional `strict` and `theme.wash` fields.
-
-v0.11.1 fixes typechecking for consumers whose `tsconfig.json` sets `erasableSyntaxOnly`. The published source no longer uses TypeScript syntax that the option rejects, and cards render the same.
-
-v0.12.0 adds curly quotes and en dashes, keeps a short word off a headline's first line, adds `keepTogether` names, route-derived eyebrows (`path`, `eyebrow: false`, and `socialImageEyebrow`), review findings with codes in `socialImageFit`, palette distance checks, and lets real bracketed titles such as `[untitled]` through. Existing options behave as before, and `strict` throws on no new cases.
-
-v0.13.0 redraws the card to match the marketing sites: the sticky header with the foil mark and name over the hero, in the site's Design Kit palette, with no tile or wash. Home cards set the tagline as the headline. It adds `brand`, `brandMark`, `palette`, `theme.headerBackground`, `theme.line`, `socialImagePaletteNames`, and the `home-headline-three-lines` finding. v0.12 options still build: `icon` and `mark` draw in the header, and `theme.accent` and `theme.wash` are ignored.
-
-v0.13.1 fixes headlines that left one short word alone on the last line, such as "from." under "See how someone thinks, and where every claim comes from.", when no two-line break fit. The headline now breaks at the clause instead: "See how someone thinks, / and where every claim / comes from." A home card with `layout: "product"` and the hero headline no longer reports `description-repeats-tagline` for the tagline beneath it.
-
 `defineSocialImageSite` checks the name, domain, description, brand mark, and icon when the module loads, so a bad icon fails the build instead of a share preview. Static sites build the same details with `socialImageSiteDetails` from `@hraness/web-discovery/social-image/card` and pass them to `createSocialImageCard`.
 
 ## Pick an import
@@ -439,13 +430,13 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`bun run check` validates the repository inventory, checks the four package entry points, the dependency and peer dependency pins, and release workflow permissions, scans the repository for private paths and identities, lints and typechecks the source, rebuilds the four committed runtime exports, runs the example and property tests, and packs the package. The package smoke then imports every runtime export, renders a PNG through `ImageResponse` and again through `satori` plus `@resvg/resvg-js` with genuine Node 24, typechecks installed consumers under Bundler and NodeNext resolution, and completes a real Next.js production build.
+See [Contributing](./CONTRIBUTING.md) for the development toolchain and checks.
 
 ## Questions
 
 ### Why not use the Next.js metadata files directly?
 
-For one simple site, use them. Next.js builds `robots.txt`, the sitemap, the manifest, and Open Graph images from files such as `app/robots.ts` and `app/sitemap.ts`, and [schema-dts](https://github.com/google/schema-dts) types JSON-LD. This package feeds those routes from one validated site record, rejects malformed origins, paths, and card colors before producing output, and adds RSS and Atom feeds and an IndexNow payload, which Next.js does not build. [next-sitemap](https://github.com/iamvishnusankar/next-sitemap) writes sitemaps after the build, and [next-seo](https://github.com/garmeeh/next-seo) renders tags and JSON-LD from components. Checked on 2026-09-28.
+For one simple site, use them. Next.js builds `robots.txt`, the sitemap, the manifest, and Open Graph images from files such as `app/robots.ts` and `app/sitemap.ts`, and [schema-dts](https://github.com/google/schema-dts) types JSON-LD. This package feeds those routes from one validated site record, rejects malformed origins, paths, and card colors before producing output, and adds RSS and Atom feeds and an IndexNow payload, which Next.js does not build. [next-sitemap](https://github.com/iamvishnusankar/next-sitemap) writes sitemaps after the build, and [next-seo](https://github.com/garmeeh/next-seo) renders tags and JSON-LD from components.
 
 ### Can `robots.txt` make a page private?
 
