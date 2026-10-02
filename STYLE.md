@@ -1,6 +1,6 @@
 # Public writing style
 
-<!-- synced from hraness/.github STYLE.md sha256:3e0d4984501e1d7bfbaa2812fa0b71ba6846cc537d9e79c358e771e567aa58a5 -->
+<!-- synced from hraness/.github STYLE.md sha256:72a981bf9e838efb74a73918c8b19f6ebc583fdc0f532cc4c5141a65891347d2 -->
 
 This guide covers everything written for readers outside a repository: product pages, documentation, READMEs, interface text, metadata, and text a model writes for publication. Apply the voice rules in [`WRITING.md`](WRITING.md) first. The [documentation guidelines](https://github.com/hraness/.github/blob/main/DOCUMENTATION_GUIDELINES.md) choose a document's purpose and shape, and the [README guidelines](https://github.com/hraness/.github/blob/main/README_GUIDELINES.md) cover the repository front door.
 
@@ -77,7 +77,7 @@ Accuracy has priority over a local line-editing rule. Record a recurring excepti
 - Write historical facts as history (“Added in v3.3.1”). Do not pin a claim about today to an old release after a newer one has shipped.
 - Derive every install command and version on a page from the package version or the release record, and test that they match. Type a version in one place only.
 - After a rename, pivot, retirement, or restructure, search every surface for the old name and for the nouns that described the old product, follow every internal link, and fix or remove what no longer exists. Update `AGENTS.md`, `CONTRIBUTING.md`, design briefs, and product lists on legal pages in the same change, so the next agent does not restore the old product.
-- Mention a retired product only in a redirect, a changelog, or a “formerly” note. Do not compare the current release with a retired product's release.
+- Mention a retired product only in a redirect, a changelog, or a “formerly” note. Never name or link a retired prototype in public material, not even in a “formerly” note. Do not compare the current release with a retired product's release.
 
 ## Keep one definition per product
 
@@ -109,11 +109,33 @@ Most Hraness copy is drafted by agents working inside repository guides full of 
 - Remove unverifiable superlatives such as “the first” and “the only” unless a cited source supports them.
 - Keep repository instructions and tests from demanding reader-hostile copy. When a guide or test requires a status phrase on every page, change the requirement to the fact that must stay true and let the page say it plainly.
 
+## Give marketing pages a readable path
+
+- Start with what the product helps someone do, who it is for, and a useful next action. Introduce implementation details only when they help that reader choose or use the product.
+- Make each section answer the next question a visitor is likely to have. Remove a section when it repeats the introduction or explains internal work without helping that decision.
+- Use a preview to show a recognizable task and a useful result. A CLI help dump, test log, checksum, or release-verification link does not show a product's value unless that is the product's actual task. Omit a preview that adds no useful example.
+- Keep release inspection, protocol contracts, configuration details, and maintainer evidence in the install guide or reference. Label links by what readers can do there, such as “Get started” or “See an example”.
+- Keep examples truthful. Use accurate accessible descriptions and recognizable sample content. Never present invented output, timings, customer data, or completion claims as a recorded run.
+- Render code and executable commands with the shared syntax highlighter and the correct language. Do not bypass it with a bare code block or manually colored text. Keep natural-language prompts and non-code output readable as text.
+- Use the shared terminal frame for shell commands and terminal interactions. Use a code block for source files and structured data; do not dress ordinary prose in terminal chrome. Apply the same treatment to equivalent examples across sites.
+- Copy controls copy executable input without shell prompts or displayed output. Preserve complete commands, keyboard access, readable colors in both themes, and horizontal scrolling for long lines on narrow screens.
+- Use shared foreground and surface pairs for interactive controls. Control text and glyphs must reach at least 4.5:1 contrast in both themes, including selected, hover, and focus states. Never assume white is readable on a brand accent.
+- Review the page as a new visitor at desktop and phone widths. Confirm that the headline, example, and next action make sense before reading the documentation, and that essential limits appear beside the claims they qualify.
+
+## Write evergreen explanations
+
+- Give an educational article one useful question, a clear answer, and a concrete example the reader can reason through or apply. Explain the cause, choice, or tradeoff; a feature list with an introduction is not an explanation.
+- Write about the enduring idea and the public behavior a reader can use. Keep implementation diaries, internal file paths, test totals, task records, deployment history, and plans out of the article body. Link to public reference material when exact syntax or architecture helps the reader go further.
+- Keep release chronology in release notes and current setup requirements beside the relevant command. Do not date an evergreen explanation with “as of”, “recently”, a build number, or the author's review date. Preserve real publication and review dates in their metadata; include a historical date in prose only when the event's timing is part of the explanation.
+- State claims at their supported scope. Remove repeated permissions language, generic disclaimers, and defensive lists of things the article does not establish. Keep a material limitation beside the decision it changes, and link to detailed policy or reference where needed.
+- Check product names, destination links, public behavior, and image credits together. Replace a stale explanation rather than adding a caveat about its age. Never relabel historical evidence or a tool-generated asset as if it came from a different source.
+- Improve the existing collection before adding articles. Add a post for a distinct reader question that existing pages do not answer, with its own example and sources. Do not create thin variations to fill a series or repeat the product's pitch.
+
 ## State each limit once
 
 Readers trust a page that states its limits plainly. They skim a page that repeats them.
 
-- State the product's status once, near the top, with one of these labels: *In development*, *Preview*, *Beta*, *Latest release: vX.Y.Z*, *Paused*, or *Retired*. Follow it with one sentence on how to install or use it today, such as “Install from source; there is no signed release yet.”
+- State release status where it changes how someone can use the product. Keep the current version with installation instructions and explain an unavailable capability beside the affected action. Do not add a release label or status paragraph to every educational page.
 - Put each other limit beside the feature it limits, once. Link to the status or limits page instead of restating the caveat in each section. Never drop a true limit to make the copy read better.
 - Write a claim at its true scope instead of following it with what it does not prove. “Tests cover local networks only” replaces “These are tested local cases, not hosted private networking or evidence about independent devices.”
 - State a privacy or scope rule once, positively (“Only documents you choose to publish become public”), and keep the full list of exclusions on the privacy or security page.
@@ -153,7 +175,7 @@ Readers trust a page that states its limits plainly. They skim a page that repea
 - Put literal input and interface values in `code`.
 - Use an ellipsis glyph (`…`) only when an action opens another input step.
 - Do not use em dashes in authored text: prose, titles, meta descriptions, social text, alt text, captions, image credits, list separators, and the templates that generate them. Rewrite the sentence instead of substituting a spaced hyphen. Quoted third-party titles keep their own punctuation. Use parentheses only for a short, necessary explanation.
-- Use each product's prose name exactly as its messaging record spells it (`names.name`), including case (xcb, Textbutler, AI Charts, Soundfish, Sys1). The all-capitals `names.catalog` form belongs only in designs that set every name in capitals. Do not use the repository slug or the domain as the name in prose, and do not use a product name as a common noun.
+- Use each product's prose name exactly as its messaging record spells it (`names.name`), including case. The all-capitals `names.catalog` form belongs only in designs that set every name in capitals. Do not use the repository slug or the domain as the name in prose, and do not use a product name as a common noun.
 - Give each destination one label across the header, footer, breadcrumbs, and Markdown twins.
 - Make interpolated counts agree with their nouns (“1 check”, “2 checks”), and test zero, one, and several.
 - Spell out zero through nine in prose. Use numerals for 10 or more, measurements, dates, and money.
@@ -161,8 +183,26 @@ Readers trust a page that states its limits plainly. They skim a page that repea
 ## Write captions, alt text, and credits
 
 - Write alt text for what the image shows in its context. Do not repeat the headline or start with “Image of”.
-- Use a caption to connect the image to the text. Do not explain what the image is not, and do not end on an epigram.
+- Make visible captions optional. Add one only when it helps the reader understand a result, use a control, or make a decision. Remove generic “Illustration” labels, invented-fixture notices, and hints that repeat an obvious label.
+- Keep accessible descriptions accurate and specific to the rendered state. Use “example” when that distinction matters; it does not require a visible disclaimer.
+- Preserve meaningful evidence captions, legal notices, and actual feature limits. State each once beside the claim it qualifies.
 - Credit tools and models by their current names.
+
+## Keep article illustrations coherent
+
+- Give a product's article collection one authored visual direction: consistent drawing technique, line weight, texture, framing, and degree of abstraction. Start with a reviewed image from the collection and the product's brand palette.
+- Use a quiet neutral ground, one dominant brand color, and at most one supporting accent. Keep the accent subordinate and use tonal variations for depth. Avoid unrelated bright colors, glossy stock-art treatments, and a different style for each topic.
+- Generate editorial artwork through [SlopCamera](https://slopcamera.com). Retain its authored prompt, reference assets, and generation record with the source. Inspect the image at article and card sizes in both page themes before accepting it.
+- Make each illustration explain the article's central idea through one clear visual relationship. Avoid generic technology collages, decorative interface fragments, and text baked into images. A diagram may use labels when those labels carry the explanation.
+- Give every illustrated article a complete, intentional card and lead-image treatment. Preserve the actual generation history when replacing an old asset; credit the tool that made the new image and link its current public site.
+
+## Write social text
+
+- Posts on X, Bluesky, Threads, and LinkedIn follow every rule here, including no em dashes and no exclamation marks.
+- Use no emoji, hashtags, or thread numbering unless a repository addition allows them for one channel.
+- Keep image alt text to 125 characters or fewer.
+- Link the canonical URL without tracking parameters.
+- Launch posts follow the launch beats and social posts addendum in [`GENERATION_STYLE.md`](https://github.com/hraness/.github/blob/main/GENERATION_STYLE.md), and channel limits are in [`MESSAGING.md`](https://github.com/hraness/.github/blob/main/MESSAGING.md).
 
 ## Write focused documentation
 
@@ -183,7 +223,7 @@ Readers trust a page that states its limits plainly. They skim a page that repea
 - Use one literal heading for the object, task, data view, or state.
 - Add supporting text only for a distinct instruction, constraint, status, or scope.
 - Name the action, object, current state, limit, or recovery step.
-- Do not narrate the interface or repeat visible information.
+- Do not narrate the interface or repeat visible information. Omit labels announcing how many cards are on screen or describing an obvious preview; retain counts only when they help navigation, selection, or comparison.
 - Keep normal readiness silent. Show status text for pending work, important results, or problems that the reader can fix.
 - Add search only when the collection is too large or varied for direct selection.
 - Move secondary actions and settings out of persistent primary controls.
@@ -198,6 +238,7 @@ Readers trust a page that states its limits plainly. They skim a page that repea
 - Name the consequence in a confirmation. Repeat the exact verb and object for a destructive action.
 - Use nouns for labels. Use placeholders for a format or example, not a repeated label.
 - State the completed result in past tense in a toast notification.
+- Follow [`CLI_MENU_STYLE.md`](https://github.com/hraness/.github/blob/main/CLI_MENU_STYLE.md) for command-line output, the shared status and control commands, and macOS permission notices.
 
 ## Vary a generated series
 
