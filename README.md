@@ -4,6 +4,17 @@
 
 The package turns your records into metadata. Your application still supplies every product fact, route, date, image, and visual decision.
 
+## Find the output you need
+
+Start with [one site record](#describe-a-site-once-for-search-social-sitemaps-and-structured-data) for metadata, robots, sitemap URLs, and website schema. For other outputs:
+
+- [Private discovery](#keep-public-and-private-discovery-separate): select no-index metadata without treating crawler policy as access control.
+- [Article images](#use-one-image-record-for-an-article): reuse the visible image in metadata, schema, feeds, and sitemaps.
+- [Blog feeds](#publish-a-blog-index-feeds-and-sitemap-entries): build Atom and RSS from article records.
+- [Safe JSON-LD](#render-safe-json-ld): render structured data that matches visible page facts.
+- [Site-wide social cards](#declare-a-site-once-and-render-every-card-from-it): define identity once; use the [card reference](#generate-a-deterministic-social-card) for colors, text fitting, and diagnostic codes.
+- [Import choices](#pick-an-import): keep Next.js rendering separate from the other builders.
+
 ## Install
 
 Pin a release tag:
