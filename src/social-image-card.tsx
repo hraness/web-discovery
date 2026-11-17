@@ -1,4 +1,4 @@
-import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/social";
+import { nebulaSansSocialFonts } from "./fonts/nebula-sans/social-fonts.generated.js";
 import { cloneElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 

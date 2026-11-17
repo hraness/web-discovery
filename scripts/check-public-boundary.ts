@@ -118,10 +118,10 @@ if (JSON.stringify(manifest.peerDependenciesMeta) !== JSON.stringify({
 })) {
   throw new Error("package must mark only the Next.js peer optional");
 }
-if (JSON.stringify(manifest.dependencies) !== JSON.stringify({
-  "@hraness/design-kit": "github:hraness/design-kit#v0.5.0",
-})) {
-  throw new Error("package must pin only the reviewed Design Kit release");
+// The Nebula Sans social-card fonts are vendored under src/fonts/nebula-sans,
+// so the package installs nothing at runtime beyond its peers.
+if (manifest.dependencies !== undefined) {
+  throw new Error("package must have no runtime dependencies");
 }
 
 for (const [source, requiredImport] of [
@@ -147,7 +147,7 @@ const socialImageCardSource = await readFile(
   "utf8",
 );
 if (!socialImageCardSource.includes(
-  'from "@hraness/design-kit/fonts/nebula-sans/social"',
+  'from "./fonts/nebula-sans/social-fonts.generated.js"',
 )) {
   throw new Error("social-image card must use the reviewed Nebula Sans payload export");
 }
