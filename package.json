@@ -1,6 +1,6 @@
 {
   "name": "@hraness/web-discovery",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "description": "Build Next.js metadata, robots.txt, sitemaps, RSS and Atom feeds, JSON-LD, IndexNow payloads, and social cards from one validated site record.",
   "license": "MIT",
   "type": "module",
@@ -58,6 +58,8 @@
     "src/social-image-foil.ts",
     "src/social-image-palettes.generated.ts",
     "src/social-image-raster.ts",
+    "src/fonts/nebula-sans/LICENSE.txt",
+    "src/fonts/nebula-sans/PROVENANCE.md",
     "LICENSE",
     "README.md"
   ],
@@ -70,11 +72,13 @@
     "build": "bun run ./scripts/build.ts",
     "check:portfolio-inventory": "bun run ./scripts/check-portfolio-inventory.ts",
     "check:public-boundary": "bun run ./scripts/check-public-boundary.ts",
+    "generate:nebula-social-fonts": "bun run ./scripts/generate-nebula-social-fonts.ts",
+    "check:nebula-social-fonts": "bun run ./scripts/generate-nebula-social-fonts.ts --check",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src ./scripts",
     "test:package": "bun run ./scripts/package-smoke.ts",
-    "check": "bun run check:portfolio-inventory && bun run check:public-boundary && bun run lint && bun run typecheck && bun run build && bun run test && bun run test:package",
+    "check": "bun run check:portfolio-inventory && bun run check:public-boundary && bun run check:nebula-social-fonts && bun run lint && bun run typecheck && bun run build && bun run test && bun run test:package",
     "prepack": "bun run check"
   },
   "peerDependencies": {
@@ -85,9 +89,6 @@
     "next": {
       "optional": true
     }
-  },
-  "dependencies": {
-    "@hraness/design-kit": "github:hraness/design-kit#v0.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

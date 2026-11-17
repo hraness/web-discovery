@@ -1,4 +1,4 @@
-import { nebulaSansSocialFonts } from "@hraness/design-kit/fonts/nebula-sans/social";
+import { nebulaSansSocialFonts } from "./fonts/nebula-sans/social-fonts.generated.js";
 import type { ReactElement, ReactNode } from "react";
 import type { SocialImageFoil } from "./social-image-foil.js";
 import { DESIGN_KIT_LIGHT_PALETTES } from "./social-image-palettes.generated.js";
