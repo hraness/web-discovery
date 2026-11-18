@@ -1874,7 +1874,7 @@ export function socialImageEyebrow(path: string): string | undefined {
   const query = path.search(/[?#]/u);
   const segment = (query === -1 ? path : path.slice(0, query)).split("/").find((part) => part.length > 0);
   if (segment === undefined) return undefined;
-  let decoded = segment;
+  let decoded: string;
   try {
     decoded = decodeURIComponent(segment);
   } catch {
