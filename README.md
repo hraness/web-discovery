@@ -22,7 +22,7 @@ Pin a release tag:
 ```json
 {
   "dependencies": {
-    "@hraness/web-discovery": "github:hraness/web-discovery#v0.13.1"
+    "@hraness/web-discovery": "github:hraness/web-discovery#v0.14.0"
   }
 }
 ```
@@ -334,7 +334,7 @@ expect(socialImageLookAlikes([socialSite, ...otherSites])).toEqual([]);
 
 Sites that share a Design Kit palette share it on the web too, so `socialImageLookAlikes` does not flag them: their cards differ by mark and name, as their headers do. It compares sites on different palettes, or with their own `theme` colors.
 
-The 1200 × 630 PNG embeds Nebula Sans Book and Bold from Design Kit. The renderer fetches no remote assets, reads no files at runtime, and requires no stylesheet. Pass six-digit hex theme colors to match your application.
+The 1200 × 630 PNG embeds Nebula Sans Book and Bold, shipped in the package under the SIL Open Font License (`src/fonts/nebula-sans/`). The renderer fetches no remote assets, reads no files at runtime, and requires no stylesheet. Pass six-digit hex theme colors to match your application.
 
 Static sites without a Next.js runtime import the same layout through `@hraness/web-discovery/social-image/card`, which carries no `next` import. `createSocialImageCard` returns the React element, its embedded fonts, and the card dimensions so a checked script can rasterize with `satori` and `@resvg/resvg-js`:
 
