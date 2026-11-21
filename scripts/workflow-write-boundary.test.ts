@@ -11,6 +11,13 @@ test("auto-tag may request a contents-write token only from create-github-app-to
   expect(workflowWriteViolation(taggerPath, tagger)).toBeUndefined();
 });
 
+test("auto-tag enables Node proxy support for the GitHub App token action", () => {
+  const tokenStep = tagger.split(/^ {6}- /mu)
+    .find((step) => step.includes("uses: actions/create-github-app-token@"));
+
+  expect(tokenStep).toMatch(/^ {8}env:\n(?: {10}.*\n)* {10}NODE_USE_ENV_PROXY: "1"$/mu);
+});
+
 test("every other contents write still fails the boundary", () => {
   const cases: [string, string][] = [
     // The same token input in any other workflow.
