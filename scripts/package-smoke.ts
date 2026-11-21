@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
+import manifest from "../package.json" with { type: "json" };
 
 const packageName = "@hraness/web-discovery";
 const importSpecifiers = [
@@ -8,25 +9,22 @@ const importSpecifiers = [
   `${packageName}/social-image`,
   `${packageName}/social-image/card`,
 ];
-const verificationPackages = [
-  "@resvg/resvg-js@2.6.2",
-  "@types/node@^24.10.0",
-  "@types/react@^19.2.14",
-  "@types/react-dom@^19.2.3",
-  "next@16.3.3",
-  "react@19.2.3",
-  "react-dom@19.2.3",
-  "satori@0.33.4",
-  "typescript@^6.0.3",
-];
 
+const { devDependencies } = manifest;
 const plainImportSpecifiers = [packageName, `${packageName}/social-image/card`];
 const plainConsumerPackages = [
   "@types/node@^24.10.0",
-  "@types/react@^19.2.14",
-  "react@19.2.3",
-  "react-dom@19.2.3",
+  `@types/react@${devDependencies["@types/react"]}`,
+  `react@${devDependencies.react}`,
+  `react-dom@${devDependencies["react-dom"]}`,
   "typescript@^6.0.3",
+];
+const verificationPackages = [
+  ...plainConsumerPackages,
+  "@resvg/resvg-js@2.6.2",
+  `@types/react-dom@${devDependencies["@types/react-dom"]}`,
+  `next@${devDependencies.next}`,
+  "satori@0.33.4",
 ];
 
 const repository = process.cwd();
