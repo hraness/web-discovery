@@ -50,6 +50,9 @@ jobs:
         if: steps.version.outputs.tag
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        env:
+          # v3 uses Node's proxy support when the runner configures a proxy.
+          NODE_USE_ENV_PROXY: "1"
         with:
           app-id: ${{ vars.RELEASE_TAGGER_APP_ID }}
           private-key: ${{ secrets.RELEASE_TAGGER_PRIVATE_KEY }}
